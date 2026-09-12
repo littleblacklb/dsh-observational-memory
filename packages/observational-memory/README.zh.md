@@ -1,5 +1,5 @@
 ---
-description: "长会话的观察式记忆：在 session log 上运行观察、反思与裁剪后台任务，确定性的无模型压缩摘要，以及按记忆 id 可追溯的召回。"
+description: "长会话的观察式记忆：在会话进行中做观察、反思与剪枝的后台工作，确定性的零模型调用压缩摘要，以及可按记忆 id 追溯的召回。"
 kind: "package-reference"
 ---
 
@@ -9,50 +9,57 @@ kind: "package-reference"
 
 ## Summary
 
-长会话之所以会失去脉络，是因为压缩在一代又一代地总结上一次的总结。本插件在会话仍然鲜活时完成记忆工作：后台任务记录发生了什么、提炼持久的事实、裁剪不再重要的内容，全部写入 session log。压缩运行时确定性地渲染这些记忆，所以摘要是对持久记录的折叠，而不是对过去的一次重新改写。每一条记忆记录都引用它来自的对话，因此后续的疑问可以追溯回它的来源。
+长会话会失去主线，因为压缩在一次次地"总结之前的总结"。本插件在会话还活着的时候就把记忆工作做掉：后台 pass 记录发生了什么、提炼持久事实、剪掉不再重要的内容，写进一个由插件自己持有的存储。压缩发生时它确定性地渲染这些记忆，于是摘要是对持久记录的折叠，而不是模型对过去的一次重新改写。每条记录都引用它所来自的对话，因此之后的问题可以追溯到源头。
 
 ## Table of Contents
 
+- [安装](#install)
 - [使用本包](#use-this-package)
 - [理解实现](#understand-the-implementation)
-- [延伸阅读](#further-exploration)
-- [模型体验](#model-experience)
-- [已知限制与待办](#known-limitations-and-deferred-work)
-- [开发者注记](#dev-note)
+- [Further Exploration](#further-exploration)
+- [Dev Note](#dev-note)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+
+-----
+
+<a id="install"></a>
+## 安装
+
+两条命令，不需要改 profile。域包带着它的 bundle patch，负责挂载 ledger 并换掉压缩引擎；工具包带着自己的 patch，负责挂载 `memory_recall`。两者都是 bundle 层，加载器会像对待其他层一样组合它们。
+
+```bash
+dsh plugin --profile web add @deepseek-ai/dsh-observational-memory
+dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
+```
+
+两个包都不修改 DeepSeek Harness。记忆不是 session 事件，所以不需要往 harness 里编译任何东西就能保证会话可读 —— 这也正是这两个包能像普通插件一样从 npm 安装的原因。
 
 -----
 
 <a id="use-this-package"></a>
 ## 使用本包
 
-在 profile 中挂载本插件即可，无需进一步配置。记忆节奏、记忆模型以及活跃记忆预算都可配置；默认值适用于长时间的编码会话。
+把插件挂进 profile 即可，无需其他配置。记忆节奏、worker 模型、ledger 位置、活跃记忆预算都可配置；默认值适合长时间编码会话。
 
 ### 记忆节奏随模型上下文窗口缩放
 
-这是本插件相对固定阈值记忆设计的核心行为差异。
+这是本插件与固定阈值记忆设计的主要行为差异。
 
-阈值是**当前模型真实上下文窗口**的比例，而不是针对某一种窗口大小调好的绝对 token 数：
+阈值是**当前模型真实上下文窗口**的比例，而不是为某个窗口大小调出来的绝对 token 数：
 
 | 设置 | 默认值 | 含义 |
 |---|---|---|
-| `observeAfterRatio` | `0.05` | 新对话累积到窗口的 5% 后运行 observer |
+| `observeAfterRatio` | `0.05` | 新增对话达到窗口的 5% 后运行 observer |
 | `reflectAfterRatio` | `0.10` | 达到 10% 后运行 reflector |
 
-窗口值读取自持久的 `request/context` 事件，因此不产生额外调用，也能在 reload 之后保留。于是一个 100 万 token 的模型会得到与 100 万 token 相称的记忆节奏，而不是被一个面向 128K 调好的常量所左右——既不会触发得过于频繁，也不会让窗口白白填满。
+窗口读取自持久的 `request/context` 事件，因此不产生额外调用，也能在重载后保留。1M token 的模型于是得到适合 1M token 模型的记忆节奏，而不是一个按 128K 调好的常量强加的节奏 —— 既不会触发过频，也不会让窗口填满。
 
-`observeAfterTokens` 与 `reflectAfterTokens` 仍然作为未知窗口时的兜底值；把比例设为 `0` 的部署得到的也正是这一行为。
+`observeAfterTokens` 与 `reflectAfterTokens` 保留为未知窗口时的回退值，把某个 ratio 设为 `0` 的部署拿到的也正是这个行为。
 
-### 记忆标签页
+### Worker 模型：默认使用会话模型
 
-插件会在对话视图环中贡献一个 **记忆** 标签页，与 Chat 和 Trajectory 并列。它采用与这位同类一致的账本加检查器布局：一排记录计数的工具栏压在固定列标题与单行记录之上，选中记录的完整内容、状态以及被引用的对话则在右侧的详情面板中展开。第四个标签页列出浏览器当前保留的每一次压缩，包含写入它的路由以及它究竟替换了哪些消息——由记忆渲染出的检查点会被标记为未调用模型。
-
-这个页面用来回答记忆块本身回答不了的问题。模型看到的是一行形如 `[a1b2c3d4e5f6] high …` 的记录；这个标签页正是让人把这行记录与它背后的对话对照的地方：从一条反思走到它保留的观察，再走到被引用的原始条目。页面显示的一切都已经驻留在浏览器中：记录来自 `observationalMemory` session projection（本插件在 host 侧折叠它，而 session controller 已经在把它推送到页面），引用则对照 Conversation 与 Trajectory 视图读取的同一个事件窗口来解析。composer 坞站里还会多一条紧凑读数，位于输入框下方、与会话的轮次与 token 药丸并列：它显示当前会话握有多少观察与反思，点开可以看到按后台任务划分的明细。因此浏览器半边不持有自己的传输、store 或轮询。
-
-### 记忆条与浏览器
-
-记忆条与浏览器界面的模型可见效果见下方模型体验章节：它读取客户端投影，不产生模型可见内容。
-
-指定一个更便宜或更快的路由只需一个字段：
+除非配置 `model`，记忆 worker 使用会话自己的模型。换成更便宜或更快的路由只需一个字段：
 
 ```yaml
 - id: observational-memory
@@ -64,20 +71,41 @@ kind: "package-reference"
       reasoningEffort: low
 ```
 
+### 查看记忆
+
+记忆以带 id 的文本块形式到达模型。`/om` 系列就是人用来核对这些行与背后对话的手段：
+
+| 命令 | 显示内容 |
+|---|---|
+| `/om status` | 记录数、observer 的覆盖漂移、活跃池相对预算的位置、以及各 worker 的水位 |
+| `/om view` | 压缩此刻会渲染出的确切文本块 |
+| `/om show <id>` | 单条记录，按它的来源链解析 —— 反思展开为它保留的观察，观察展开为它引用的条目 |
+
+`/om show` 从 observer 自己的 fold 读来源，而不是重新读日志，所以来源显示的正是记录写下时读到的样子。同一套解析也以 [`memory_recall`](../../tool-observational-memory/README.md) 工具的形式提供给模型，它可以对它记忆块里看到的任何 id 调用。
+
+命令输出会进日志（`command/run` 与 `command/done`），所以即使记忆 pass 本身不进 Trajectory，你查询记忆这件事仍然留痕。
+
+### 记忆存在哪里
+
+每个会话一份 JSON 文档，位于 harness home 下的 `observational-memory` 目录（`$DSH_HOME`，或 `~/.dsh`）。写入经过临时文件，因此读方永远不会看到半个 pass；读取是同步的，因此模型可见的记忆块和压缩渲染器都能在不 await 的情况下拿到它。
+
+**这个目录 —— 而不是会话日志 —— 才是备份时必须一起带上的东西**，否则会话会丢掉它的记忆。用 `storageDir` 可以把它放到别处。
+
 ### 配置
 
 | 设置 | 默认值 | 含义 |
 |---|---|---|
-| `observeAfterRatio` | `0.05` | observer 节奏占上下文窗口的比例；`0` 表示禁用比例 |
-| `reflectAfterRatio` | `0.10` | reflector 节奏占上下文窗口的比例；`0` 表示禁用比例 |
+| `observeAfterRatio` | `0.05` | observer 节奏占上下文窗口的比例；`0` 关闭该比例 |
+| `reflectAfterRatio` | `0.10` | reflector 节奏占上下文窗口的比例；`0` 关闭该比例 |
 | `observeAfterTokens` | `10000` | 未知窗口时使用的 observer 绝对阈值 |
 | `reflectAfterTokens` | `20000` | 未知窗口时使用的 reflector 绝对阈值 |
-| `observationsPoolMaxTokens` | `20000` | 触发压缩整体折叠账本的活跃观察预算 |
-| `observationsPoolTargetTokens` | 最大值的一半 | dropper 维护的活跃观察目标 |
-| `observerChunkMaxTokens` | 记忆模型窗口的五分之一 | 单次 observer 分块上限；最小 `256` |
-| `agentMaxTurns` | `16` | 单次后台任务轮次上限 |
-| `model` | session 模型 | 记忆工作所用的 `{ provider, model, reasoningEffort }` |
-| `workerMaxTokens` | 适配器默认 | 单次 worker 调用的最大生成量 |
+| `observationsPoolMaxTokens` | `20000` | 活跃观察预算，达到后压缩折叠整个 ledger |
+| `observationsPoolTargetTokens` | 最大值的一半 | dropper 维持的活跃观察目标 |
+| `observerChunkMaxTokens` | 记忆模型窗口的五分之一 | observer 单块上限；最小 `256` |
+| `agentMaxTurns` | `16` | 单次后台 worker 运行的轮次上限 |
+| `model` | 会话模型 | 记忆工作的 `{ provider, model, reasoningEffort }` |
+| `workerMaxTokens` | 适配器默认 | 单次 worker 调用的最大生成长度 |
+| `storageDir` | `$DSH_HOME/observational-memory` | ledger 写入的目录 |
 | `passive` | `false` | 关闭全部后台记忆工作 |
 
 非法值会让插件加载失败，而不是静默降级。
@@ -87,75 +115,90 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
-记忆是三个仅写入日志的 session event，以及建立在它们之上的一个折叠。
+记忆是一个存储加上三个作用于它的转换。
 
-- `memory/observations-recorded` —— 从对话中提取的、带时间戳与来源引用的观察。
-- `memory/reflections-recorded` —— 持久的方向性事实，每条都引用它所保留含义的那些观察。
-- `memory/observations-dropped` —— 墓碑。裁剪会把一条观察移出活跃记忆，但绝不从日志中删除，因此召回仍然能解析它。
+- `applyObservations` 追加带来源引用的记录，按内容寻址的 id 去重，因此相同文本会收敛为一条记录。
+- `applyReflections` 追加持久的方向性事实，每条都引用它所保留其含义的观察。反思比它引用的观察活得更久。
+- `applyDrops` 把观察从活跃池移入墓碑列表而不是抹掉，因此召回仍能按 id 解析到它。
 
-`observationalMemory` projection 折叠这些事件，其余一切都读这个折叠结果：压缩渲染器、`memory_recall` 工具，以及浏览器界面。
+三个转换都会拒绝水位已经应用过的 pass。这正是让重试或重复的 pass 成为空操作、而不是被应用两次的原因。
 
-后台任务在 `turn/end` 落到提交后的 `session/event` 事件流上运行，所以一次缓慢或失败的记忆任务既不会阻塞也不会拖垮对话。每个 worker 用单一工具 schema 发起一次 `ctx.llm.stream()` 调用，它返回的每一处引用都会针对收到的分块做校验：引用分块之外条目的观察会被整体拒绝，因为部分可信的引用集合会腐蚀溯源信息。
+围绕它们的 store 按会话缓存，并在每次变更时写穿。它通过 `ctx.reflect.provide` 发布到 context 上，而不是以模块级单例的形式暴露 —— 因为压缩引擎是作为自己独立的 loader row 挂载的，看不到本插件的闭包。
 
-压缩集成把默认引擎替换为一个覆写 `summarize` 的子类。当折叠后的记忆非空时，它不调用模型直接返回渲染文本；当记忆为空时，它委派给默认总结器，因此真实上下文绝不会被替换成空。
+后台 pass 在 `turn/end` 落地时由提交后的 `session/event` 流触发，因此缓慢或失败的记忆 pass 既不会阻塞也不会拖垮对话。每个 worker 发一次 `ctx.llm.stream()` 调用，带一个工具 schema，返回的每处引用都会针对它拿到的分块校验：引用了分块之外条目的观察会被整体拒绝，因为部分可信的引用集合会破坏来源链。
+
+压缩集成用一个子类替换默认引擎，只覆写 `summarize`。记忆非空时它直接返回渲染文本，不调用模型；记忆为空、或渲染不会让它替换的区域变小时，它委托给默认摘要器，因此真实上下文永远不会被替换成空。
 
 -----
 
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`docs/subsystems/compaction.md`](../../../docs/subsystems/compaction.zh.md) —— 本插件所扩展的压缩接缝。
-- [`docs/subsystems/session-projection.md`](../../../docs/subsystems/session-projection.zh.md) —— 记忆状态所在的折叠机制。
-- [`dsh-session`](../../core/session/README.zh.md) —— 记忆写入的追加式日志。
+- [`FREEZE.md`](../../FREEZE.md) —— 记忆为什么离开会话日志，以及代价是什么。
+- [`DESIGN.md`](../../DESIGN.md) —— 本包所依据的设计记录。
+- [`src/store.ts`](src/store.ts) —— ledger、它的转换、以及它的持久化规则。
+- [`src/compaction-engine.ts`](src/compaction-engine.ts) —— `summarize` 覆写与它的收缩守卫。
+- [`tool-observational-memory`](../../tool-observational-memory/README.md) —— 按来源链解析 id 的 `memory_recall` 工具。
 
 -----
 
-<a id="model-experience"></a>
-
+<a id="dev-note"></a>
 ## Dev Note
 
 <details>
-<summary>维护者工作背景——点击展开</summary>
+<summary>维护者工作上下文 —— 点击展开</summary>
 
-记忆事件的词汇表必须声明在本仓库内。`Session.append` 没有给插件任何方式来把自身事件标记为 `ignorable`，而持久化读取路径在打开会话时会拒绝未知的必需事件类型——所以一个仓库外的生产者会追加成功、刷盘成功，然后让会话在下次恢复时永久不可读。`pnpm run gen-persistence-catalog` 正是把这些事件类型放进 `KNOWN_SESSION_EVENT_TYPES` 的那一步；`tests/vocabulary.spec.ts` 是证明这次往返的关卡。
+记忆**刻意不是** session 事件。`Session.append` 没有给插件任何把事件标记为 `ignorable` 的途径，而持久化读取路径在打开会话时会拒绝未知的必需事件类型 —— 于是树外的生产者会 append 成功、flush 成功，然后在下次 resume 时让会话永久不可读。另一条出路是把类型声明进 harness 内部，但那会让插件变成一个别人无法安装的 fork。[`FREEZE.md`](../../FREEZE.md) 记录的就是走了第一条路的那条线，以及它为什么被放弃。
 
-浏览器半边作为独立产物（`lib/client.js`）挂在 `./client` 导出下发布，因为客户端模块系统把该 bundle 作为一个整体读取，并在页面中求值。它由工作区的 client pass 构建，而不是由本包自己的 host 构建，所以改动记忆条需要先跑那一趟，页面才会显示出来。
+store 发布在 context 上而不是导出为模块级单例，有两个原因：压缩引擎是独立的 loader row；而按 context 隔离的取值才能让同一进程内的两个应用 —— 或同一个测试文件里的两次挂载 —— 不会共用一份 ledger。
 
-客户端导入共享的 vocabulary 模块而不是 logging 模块：记录形状与覆盖率规则是浏览器安全的，而 id 生成会导入 `node:crypto`。
+读取刻意做成同步的。`ctx.systemPrompt.context()` 接的回调必须返回字符串，而压缩在 agent 位于步骤之间时读 ledger，所以 store 每个会话做一次 `readFileSync`，之后常驻内存。
 
-`llm` 有意不在插件的 `inject` 里。账本及其折叠在没有模型路由时依然有用，所以一个没有 LLM 服务的部署会保留它们，而不是让插件停在 PENDING；只有 observer 才等待 `llm`，通过它自己的 `ctx.inject`。
+`llm` 刻意不在插件的 `inject` 里。ledger 没有任何模型路由也有用，所以没有 LLM 服务的部署仍然保留它，而不是让插件停在 PENDING；只有 observer 通过自己的 `ctx.inject` 等待 `llm`。引擎和工具则确实声明了 `observationalMemoryStore`，因此两者都不会在没有 ledger 的地方挂载 —— 没装本包的部署拿不到 `memory_recall`，而不是得到一个只会回答"没有记忆"的工具。
+
+`pnpm run verify` 跑完整门禁：build、typecheck、100% per-file 覆盖率，以及 `scripts/check-artifacts.mjs`。最后一项在纯 Node 下加载构建产物 `lib/`，这是唯一能抓住打包故障的环节 —— `tsdown` 会把共享 chunk 从入口里拆出去，而漏掉它的 `files` 列表会产出加载时 `ERR_MODULE_NOT_FOUND` 的 tarball。
 
 </details>
 
 -----
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### 记忆快照与召回工具
 
 #### What the model sees
 
-模型看到的生成后的 [`memory_recall` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-observational-memory)：一个对象，包含一个必填的 `id` 字符串，描述为记忆行方括号中打印的 12 个字符 id。描述说明这是对已知 id 的查找而非搜索，因此模型不会把它当作浏览历史的手段。
+记忆通过 `ctx.systemPrompt.context()` 到达模型，循环会把它物化为一条位于保留历史之后的、持久的、已记录的快照。渲染出的块列出带 id 的反思与观察，并指示模型把它们当作过往记录、在条目冲突时优先最新的观察、不要重做已记录为完成的工作。模型还会获得生成的 `memory_recall` schema，用于把某个记忆 id 解析回它的源对话。
 
 #### Token effect
 
-在工具可见的每个请求上产生固定的 schema 开销。一次调用返回有界的结果：最多十二条来源条目，每条截断到两千字符，加上每条已解析记录一行。
+快照按确切文本去重，因此未变化的记忆块不增加 token，也不产生新消息。后台 worker 调用消耗 token，但不属于对话上下文；压缩渲染记忆，而不是为一次摘要调用付费。
 
 #### KV Cache effect
 
-给定配置下 schema 与其描述保持稳定，因此前缀可被缓存。召回的文本作为普通工具结果落在上下文尾部，不扰动可复用的前缀。
+由于未变化的记忆不产生新消息，请求前缀保持稳定，服务端缓存的前缀得以保留。改变前缀的是记忆增长，而它每个记忆 pass 才改变一次，不是每一步都改。
+
 
 ## Known Limitations and Deferred Work
 
-- **记忆工作计入 session 模型，而 DSH 的计费看不到它。** observer 与 reflector 调用是使用会话模型发起的普通对话请求。直接的 `ctx.llm.stream()` 调用不是 agent loop，所以没有任何东西把它的用量写入日志，`ctx.tokenMeter` 也永远看不到：这份开销是真实的，与对话出现在同一张账单上，却不产生任何警告或条目。配置 `model` 可以把记忆工作路由到更便宜的地方。
-- **缓慢或限流的提供方也会拖慢记忆采集。** DSH 没有 LLM 侧的并发限制器，所以一个饱和的提供方会同时影响对话与 worker。直接的 `ctx.llm.stream()` 调用者也没有自动重试；本插件自行实现有界退避。
-- **`purpose` 无法用来提示适配器。** 它是封闭联合，所以 worker 调用是普通请求，采用适配器的默认推理策略。
-- **Token 估计是字符启发式。** 池压力使用与 harness 估计器相同的每 token 字符比例，会低估 CJK 文本。因此在 CJK 密集的会话上，节奏与裁剪预算是近似的。
-- **记忆是会话本地的。** 反思与观察不跨会话共享，fork 会把父会话的记忆带过去，却不调和之后的分歧。
-- **被拒绝的记录是丢弃而非修复。** 引用落在分块之外的观察会被整体丢弃，而不是部分接受。因此一个编号错误的模型会失去这些观察，而不是以可疑的溯源记录它们。
-- **记忆标签页是只读的。** 从页面强制一次记忆任务或裁剪选中的记录需要 host 侧 Remote 变更面，本版本未提供；这些操作对模型可用，对用户不可用。
-- **记忆标签页只显示已经加载的历史。** 压缩记录读取自浏览器驻留的事件窗口，因此比已加载分页更早的压缩，在窗口回翻到它之前不会列出。记录本身来自覆盖整个会话的投影，始终完整。
-**待办。** 从页面编辑或裁剪记录；把同一个浏览器停靠到右侧栏的呈现方式；为 `memory_recall` 工具结果提供专门的客户端卡片；以及跨会话的反思共享。
+- **记忆工作的费用记在会话模型上，而 DSH 的账目看不到它。** observer 与 reflector 调用是使用会话所用模型的普通聊天请求。直接的 `ctx.llm.stream()` 调用不是 agent loop，因此没有任何地方把它的用量写进日志，`ctx.tokenMeter` 也永远看不到：费用是真实的、和对话出现在同一张账单上，却不产生任何警告或条目。把 `model` 配到更便宜的路由上去。
+
+- **慢或被限流的服务商同样拖慢记忆捕获。** DSH 没有 LLM 侧的并发限制器，所以服务商饱和会同时影响对话和 worker。直接的 `ctx.llm.stream()` 调用者也没有自动重试；本插件自己实现了有界退避。
+
+- **`purpose` 无法用来给适配器提示。** 它是一个封闭联合，因此 worker 调用是普通请求，走适配器默认的推理策略。
+
+- **token 估算是字符启发式。** 池压力使用与 harness 估算器相同的每 token 字符比，这低估了 CJK 文本。因此在 CJK 密集的会话里，节奏与丢弃预算是近似值。
+
+- **记忆不随会话日志一起移动。** ledger 是独立目录，因此把会话拷到别处不会带上它的记忆，重放日志也无法重建它。备份时要连同 `storageDir` 一起备份。
+
+- **fork 不继承父会话的记忆。** fork 会拿到父会话事件前缀的副本，这是它继承对话的方式 —— 但 ledger 按 session id 索引，所以子会话从空开始。重新观察被继承的前缀是它追上进度的方式。
+
+- **Web 客户端里没有记忆界面。** 本插件只有宿主半边，所以查看记忆只能靠 `/om` 或问模型。浏览器视图需要一个插件能自行注册的宿主到页面通道，本版本没有尝试。
+
+- **被拒绝的记录是被丢弃，而不是被修补。** 引用落在分块之外的观察会被整体丢弃，而不是部分接受。因此把条目编号搞错的模型会失去那些观察，而不是以可疑的来源记录它们。
+
+**Deferred.** 通过命令编辑或丢弃记录；跨会话共享反思；ledger 的浏览器视图。
 
 -----
 

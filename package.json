@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "check:artifacts": "node scripts/check-artifacts.mjs",
-    "verify": "pnpm run build && pnpm run typecheck && pnpm run test:coverage && pnpm run check:artifacts"
+    "verify": "pnpm run build && pnpm run typecheck && pnpm run test:coverage && pnpm run check:readme-pairing && pnpm run check:artifacts",
+    "check:readme-pairing": "node scripts/check-readme-pairing.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

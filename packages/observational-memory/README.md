@@ -1,5 +1,5 @@
 ---
-description: "Observational memory for long sessions: background observation, reflection, and pruning workers over the session log, deterministic model-free compaction summaries, and traceable recall by memory id."
+description: "Observational memory for long sessions: background observation, reflection, and pruning workers over the session, deterministic model-free compaction summaries, and traceable recall by memory id."
 kind: "package-reference"
 ---
 
@@ -9,23 +9,38 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Long sessions lose their thread because compaction summarizes a summary, generation after generation. This plugin does the memory work while the session is still live: background passes record what happened, distill durable facts, and prune what no longer matters, all written to the session log. When compaction runs it renders that memory deterministically, so the summary is a fold of durable records rather than a fresh model rewrite of the past. Every memory record cites the conversation it came from, so a later question can be traced back to its source.
+Long sessions lose their thread because compaction summarizes a summary, generation after generation. This plugin does the memory work while the session is still live: background passes record what happened, distill durable facts, and prune what no longer matters, in a store the plugin owns. When compaction runs it renders that memory deterministically, so the summary is a fold of durable records rather than a fresh model rewrite of the past. Every record cites the conversation it came from, so a later question can be traced back to its source.
 
 ## Table of Contents
 
+- [Install](#install)
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
+- [Dev Note](#dev-note)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
+
+-----
+
+<a id="install"></a>
+## Install
+
+Two commands, no profile editing. The domain package carries the bundle patch that mounts the ledger and swaps in the compaction engine; the tool package carries its own patch that mounts `memory_recall`. Both are bundle layers, so the loader composes them like any other.
+
+```bash
+dsh plugin --profile web add @deepseek-ai/dsh-observational-memory
+dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
+```
+
+Neither package changes DeepSeek Harness. Memory is not a session event, so nothing has to be compiled into the harness for a session to stay readable — which is also why these packages install from npm like any other plugin.
 
 -----
 
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin in a profile and it works with no further configuration. Memory cadence, the worker model, and the active-memory budget are all configurable; the defaults suit a long coding session.
+Mount the plugin in a profile and it works with no further configuration. Memory cadence, the worker model, the ledger location, and the active-memory budget are all configurable; the defaults suit a long coding session.
 
 ### Memory cadence scales with your model's context window
 
@@ -56,11 +71,25 @@ Memory workers use the session's model unless you configure `model`. Setting a c
       reasoningEffort: low
 ```
 
-### The Memory tab
+### Inspecting memory
 
-The plugin contributes a **Memory** tab to the conversation view ring, beside Chat and Trajectory. It is laid out as a ledger and an inspector, the same shape as its sibling: a toolbar of record counts over a sticky column header and one-line rows, with the selected record's full text, its state, and the cited conversation opening in a details panel on the right. A fourth tab lists each compaction the resident history still holds, with the route that wrote it and exactly which messages it replaced — a checkpoint rendered from memory is marked as needing no model call.
+Memory reaches the model as a block of id-tagged lines. The `/om` family is how a person checks those lines against the conversation behind them:
 
-The page exists to answer a question the memory block cannot answer for itself. The model is shown a line like `[a1b2c3d4e5f6] high …`; the tab is where a person checks that line against the conversation behind it, following a reflection to the observations it preserves and from there to the cited entries. Everything shown is already resident in the browser: records come from the `observationalMemory` session projection, which this plugin folds on the host and the session controller already streams to the page, and citations resolve against the same event window the Conversation and Trajectory views read. A compact reading joins the composer dock as well, under the composer and beside the session's turn and token pills: it shows how many observations and reflections the session is holding, and opens the breakdown by background pass. The browser half therefore carries no transport, no store, and no polling of its own.
+| Command | Shows |
+|---|---|
+| `/om status` | Record counts, the observer's coverage drift, the active pool against its budget, and per-worker watermarks |
+| `/om view` | The exact block compaction would render right now |
+| `/om show <id>` | One record, resolved through its provenance — a reflection to the observations it preserves, an observation to the entries it cites |
+
+`/om show` reads sources from the observer's own fold rather than re-reading the log, so a source is shown exactly as it was when the record was written. The same resolution is available to the model as the [`memory_recall`](../../tool-observational-memory/README.md) tool, which it can call on any id it sees in its memory block.
+
+Command output is logged (`command/run` and `command/done`), so asking about memory leaves a trace in the session's Trajectory even though the memory passes themselves do not.
+
+### Where memory is stored
+
+One JSON document per session, under `observational-memory` in the harness home (`$DSH_HOME`, or `~/.dsh`), written through a temporary file so a reader never sees a partial pass and read synchronously so both the model-visible block and the compaction renderer can reach it without awaiting anything.
+
+This directory — not the session log — is what a backup has to carry for a session to keep its memory. Set `storageDir` to put it somewhere else.
 
 ### Configuration
 
@@ -76,6 +105,7 @@ The page exists to answer a question the memory block cannot answer for itself. 
 | `agentMaxTurns` | `16` | Turn cap for one background worker run |
 | `model` | the session model | `{ provider, model, reasoningEffort }` for memory work |
 | `workerMaxTokens` | adapter default | Largest generation for one worker call |
+| `storageDir` | `$DSH_HOME/observational-memory` | Directory the ledger is written to |
 | `passive` | `false` | Disable all background memory work |
 
 Invalid values fail plugin load rather than degrading silently.
@@ -85,26 +115,30 @@ Invalid values fail plugin load rather than degrading silently.
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
-Memory is three log-only session events and one fold over them.
+Memory is one store and three transitions over it.
 
-- `memory/observations-recorded` — timestamped, source-cited events drawn from the conversation.
-- `memory/reflections-recorded` — durable orientation facts, each citing the observations whose meaning it preserves.
-- `memory/observations-dropped` — tombstones. Dropping removes an observation from active memory but never from the log, so recall still resolves it.
+- `applyObservations` appends source-cited records, deduplicated by a content-addressed id so the same text collapses to one record.
+- `applyReflections` appends durable orientation facts, each citing the observations whose meaning it preserves. A reflection outlives the observations it cites.
+- `applyDrops` moves an observation out of the active pool into a tombstone list rather than erasing it, so recall still resolves it by id.
 
-The projection `observationalMemory` folds those events, and everything else reads that fold: the compaction renderer, the `memory_recall` tool, and the browser surface.
+Each transition refuses a pass whose watermark it has already applied. That is what makes a retried or duplicated pass a no-op instead of a double-apply.
+
+The store around them caches per session and writes through on every mutation. It is published on the context (`ctx.reflect.provide`) rather than reached through a module singleton, because the compaction engine is mounted as its own loader row and cannot see this plugin's closure.
 
 A background pass runs off the post-commit `session/event` feed when a `turn/end` lands, so a slow or failing memory pass can neither block nor fail the conversation. Each worker makes one `ctx.llm.stream()` call with a single tool schema, and every citation it returns is validated against the chunk it was given: an observation citing an entry outside its chunk is rejected whole, because a partially trusted citation set would corrupt provenance.
 
-The compaction integration replaces the default engine with a subclass that overrides `summarize`. When folded memory is non-empty it returns the rendered text without calling a model; when memory is empty it delegates to the default summarizer, so real context is never replaced by nothing.
+The compaction integration replaces the default engine with a subclass that overrides `summarize`. When memory is non-empty it returns the rendered text without calling a model; when memory is empty, or when the render would not shrink the region it replaces, it delegates to the default summarizer, so real context is never replaced by nothing.
 
 -----
 
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`docs/subsystems/compaction.md`](../../../docs/subsystems/compaction.md) — the compaction seam this plugin extends.
-- [`docs/subsystems/session-projection.md`](../../../docs/subsystems/session-projection.md) — the fold the memory state lives in.
-- [`dsh-session`](../../core/session/README.md) — the append-only log memory is written to.
+- [`FREEZE.md`](../../FREEZE.md) — why memory left the session log, and what that costs.
+- [`DESIGN.md`](../../DESIGN.md) — the design record this package was built from.
+- [`src/store.ts`](src/store.ts) — the ledger, its transitions, and its durability rules.
+- [`src/compaction-engine.ts`](src/compaction-engine.ts) — the `summarize` override and its shrink guard.
+- [`tool-observational-memory`](../../tool-observational-memory/README.md) — the `memory_recall` tool that resolves ids through provenance.
 
 -----
 
@@ -114,13 +148,15 @@ The compaction integration replaces the default engine with a subclass that over
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The memory event vocabulary must be declared in this repository. `Session.append` gives a plugin no way to mark its events `ignorable`, and the persistence read path refuses an unknown required event type when a session is opened — so an out-of-tree producer would append successfully, flush successfully, and then make the session permanently unreadable on the next resume. `pnpm run gen-persistence-catalog` is what puts these event types into `KNOWN_SESSION_EVENT_TYPES`; `tests/vocabulary.spec.ts` is the gate that proves the round trip.
+Memory is deliberately **not** a session event. `Session.append` gives a plugin no way to mark its events `ignorable`, and the persistence read path refuses an unknown required event type when a session is opened — so an out-of-tree producer would append successfully, flush successfully, and then make the session permanently unreadable on the next resume. Declaring the types inside the harness is the other way out, but that makes the plugin a fork that cannot be installed by anyone else. [`FREEZE.md`](../../FREEZE.md) records the line that took the first approach and why it was abandoned.
 
-The browser half ships as its own artifact (`lib/client.js`) under the `./client` export, because the client module system reads that bundle as a unit and evaluates it in the page. It is built by the workspace client pass, not by the package's own host build, so a change to the strip requires that pass to run before the page will show it.
+The store is published on the context rather than exported as a module singleton for two reasons: the compaction engine is a separate loader row, and a per-context value is what keeps two applications in one process — or two mounts in one test file — from sharing a ledger.
 
-The client imports the shared vocabulary module rather than the logging one: the record shapes and the coverage rule are browser-safe, while id minting imports `node:crypto`.
+Reads are synchronous by design. `ctx.systemPrompt.context()` takes a callback that must return a string, and compaction reads the ledger while the agent is between steps, so the store does one `readFileSync` per session and stays memory-resident after that.
 
-`llm` is deliberately not in the plugin's `inject`. The ledger and its fold are useful without any model route, so a deployment with no LLM service keeps them instead of the plugin staying PENDING; only the observer waits for `llm`, through its own `ctx.inject`.
+`llm` is deliberately not in the plugin's `inject`. The ledger is useful without any model route, so a deployment with no LLM service keeps it instead of the plugin staying PENDING; only the observer waits for `llm`, through its own `ctx.inject`. The engine and the tool do declare `observationalMemoryStore`, so neither mounts where the ledger does not — a deployment without this package gets no `memory_recall` rather than a tool that can only answer "no memory".
+
+`pnpm run verify` runs the whole gate: build, typecheck, 100% per-file coverage, and `scripts/check-artifacts.mjs`. The last one loads the built `lib/` under plain Node, which is the only thing that catches a packaging fault — `tsdown` splits a shared chunk out of the entry, and a `files` list that omits it produces a tarball that fails to import with `ERR_MODULE_NOT_FOUND`.
 
 </details>
 
@@ -133,11 +169,11 @@ The client imports the shared vocabulary module rather than the logging one: the
 
 #### What the model sees
 
-Memory reaches the model through `ctx.systemPrompt.context()`, which the loop materializes as a durable, logged snapshot after retained history. The rendered block lists reflections and observations with their ids, and instructs the model to treat them as past records, to prefer the most recent observation when entries conflict, and not to redo work recorded as completed. The model also gains the generated [`memory_recall` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-observational-memory) for resolving one memory id back to its source conversation.
+Memory reaches the model through `ctx.systemPrompt.context()`, which the loop materializes as a durable, logged snapshot after retained history. The rendered block lists reflections and observations with their ids, and instructs the model to treat them as past records, to prefer the most recent observation when entries conflict, and not to redo work recorded as completed. The model also gains the generated `memory_recall` schema for resolving one memory id back to its source conversation.
 
 #### Token effect
 
-The snapshot is deduplicated by exact text, so an unchanged memory block adds no tokens and produces no new message. Background worker calls consume tokens but are not part of the conversation's context; compaction renders folded memory instead of paying for a summarization call.
+The snapshot is deduplicated by exact text, so an unchanged memory block adds no tokens and produces no new message. Background worker calls consume tokens but are not part of the conversation's context; compaction renders memory instead of paying for a summarization call.
 
 #### KV Cache effect
 
@@ -154,16 +190,15 @@ Because unchanged memory produces no new message, the request prefix stays stabl
 
 - **Token estimation is a character heuristic.** Pool pressure uses the same characters-per-token ratio as the harness estimator, which underprices CJK text. Cadence and drop budgets are therefore approximate on CJK-heavy sessions.
 
-- **Memory is session-local.** Reflections and observations are not shared across sessions, and a fork carries the parent's memory forward without reconciling later divergence.
+- **Memory does not travel with the session log.** The ledger is a separate directory, so copying a session elsewhere does not carry its memory, and replaying a log does not reconstruct it. Back up `storageDir` alongside the session.
+
+- **A fork does not inherit the parent's memory.** A fork gets a copy of the parent's event prefix, which is how it inherits conversation — but the ledger is keyed by session id, so the child starts empty. Re-observing the inherited prefix is how it catches up.
+
+- **There is no memory surface in the web client.** This plugin is host-only, so checking memory means `/om` or asking the model. A browser view would need a host-to-page channel the plugin can register by itself, which this version does not attempt.
 
 - **Rejected records are dropped, not repaired.** An observation whose citations fall outside its chunk is discarded rather than partially accepted. A model that misnumbers entries therefore loses those observations instead of recording them with suspect provenance.
 
-- **The Memory tab is read-only.** Forcing a memory pass or dropping a selected record from the page would need a host Remote mutation surface, which this version does not expose; those actions are available to the model through its own tools, not to the user through the page.
-
-- **The Memory tab shows only the history it has loaded.** Compactions are read from the browser's resident event window, so a compaction older than the loaded pages is not listed until the window pages back to it. Records themselves come from a projection covering the whole session and are always complete.
-
-**Deferred.** Editing or dropping a record from the page; a docked right-sidebar presentation of the same explorer; a dedicated client card for the `memory_recall` tool result; and cross-session reflection sharing.
+**Deferred.** Editing or dropping a record from a command; cross-session reflection sharing; a browser explorer for the ledger.
 
 -----
-
 

@@ -25,13 +25,13 @@ Compaction replaces the exact record of what was said with condensed memory, so 
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount it beside `@deepseek-ai/dsh-observational-memory`, which owns the memory ledger this tool reads. The tool is opt-in: a deployment that does not mount it still records and folds memory, and simply cannot resolve an id back to its sources.
+Mount it beside `@deepseek-ai/dsh-observational-memory`, which owns the memory ledger this tool reads:
 
-```yaml
-- insert:
-    - id: tool-observational-memory
-      name: '@deepseek-ai/dsh-tool-observational-memory'
+```bash
+dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 ```
+
+The tool is opt-in: a deployment that does not mount it still records memory, and simply cannot resolve an id back to its sources. It declares the ledger store in its inject list, so where the ledger is absent the tool does not mount at all rather than registering a tool that can only answer "no memory".
 
 There is nothing to configure. The tool registers one name and one schema, and contributes one prompt section telling the model when recall is worth a call.
 
@@ -42,7 +42,7 @@ There is nothing to configure. The tool registers one name and one schema, and c
 
 Recall is a read over two existing seams, and it adds no storage of its own.
 
-The memory fold comes from the `observationalMemory` session projection: the same fold the compaction renderer and the memory commands read, so recall cannot disagree with them about what memory holds. Resolving an id expands a reflection into the observations it names, and an observation into the entries it cites.
+Memory comes from the ledger store the domain package publishes on the context: the same store the compaction renderer and the `/om` commands read, so recall cannot disagree with them about what memory holds. Resolving an id expands a reflection into the observations it names, and an observation into the entries it cites.
 
 The source entries come from `ctx.sessionQuery`, because arbitrary historical reads are no longer available synchronously. Each cited seq is read and then traced, so a source that compaction has since shadowed reports the checkpoint that replaced it rather than reading as an ordinary entry that no longer reaches the model.
 
@@ -53,10 +53,9 @@ Everything that could not be resolved is reported: a supporting observation miss
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`dsh-observational-memory`](../observational-memory/README.md) — the ledger, its fold, and the compaction renderer this tool reads.
-- [`docs/subsystems/session-query.md`](../../../docs/subsystems/session-query.md) — the asynchronous history seam recall reads through.
-- [`dsh-tool-session-query`](../../session-query/tool-session-query/README.md) — the browsing tools for history recall; recall answers about one memory id instead.
-- [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-observational-memory) — the `memory_recall` schema the model receives.
+- [`dsh-observational-memory`](../observational-memory/README.md) — the ledger, its transitions, and the compaction renderer this tool reads.
+- [`src/index.ts`](src/index.ts) — the tool definition, its own prompt section, and the provenance walk.
+- [`FREEZE.md`](../../FREEZE.md) — why memory left the session log, which is what makes this a store read.
 
 -----
 
@@ -66,7 +65,7 @@ Everything that could not be resolved is reported: a supporting observation miss
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-The plugin deliberately does not inject the memory domain package as a service. It reads the session projection by key, so it stays a pure consumer: mounting it without the ledger yields "no memory is folded for this session" rather than a load failure.
+The plugin is a pure consumer: it reads the published ledger store and adds no storage of its own. It does declare that store in its inject list, so a deployment that mounts the tool without the ledger gets no tool at all rather than one that can only answer "no memory".
 
 `memory_recall` is the tool name, not `recall`. `recall` is already a `ContextForm` value in the model message vocabulary, and the chat UI renders a "recall" context body for it, so reusing the word as a tool name would collide with an existing meaning.
 
@@ -83,7 +82,7 @@ The catalog generator mounts this package over the SQLite query provider and a s
 
 #### What the model sees
 
-The model sees the generated [`memory_recall` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tool-observational-memory): an object with one required `id` string, described as the twelve-character id exactly as printed in brackets on a memory line. The description states that this is a lookup for a known id and not a search, so the model does not treat it as a way to browse history.
+The model sees the generated `memory_recall` schema: an object with one required `id` string, described as the twelve-character id exactly as printed in brackets on a memory line. The description states that this is a lookup for a known id and not a search, so the model does not treat it as a way to browse history.
 
 #### Token effect
 

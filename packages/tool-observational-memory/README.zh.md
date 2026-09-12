@@ -25,13 +25,13 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-把它挂载在 `@deepseek-ai/dsh-observational-memory` 旁边，后者拥有本工具所读取的记忆账本。本工具是可选的：没有挂载它的部署仍然会记录并折叠记忆，只是无法把一个 id 解析回它的来源。
+把它挂载在 `@deepseek-ai/dsh-observational-memory` 旁边，后者拥有本工具所读取的记忆账本：
 
-```yaml
-- insert:
-    - id: tool-observational-memory
-      name: '@deepseek-ai/dsh-tool-observational-memory'
+```bash
+dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 ```
+
+本工具是可选的：没有挂载它的部署仍然会记录记忆，只是无法把一个 id 解析回它的来源。它把账本 store 声明在自己的 inject 列表里，因此在没有账本的地方工具根本不会挂载，而不是注册一个只会回答「没有记忆」的工具。
 
 没有任何需要配置的东西。工具注册一个名字和一个 schema，并贡献一段提示词章节，告诉模型何时值得调用召回。
 
@@ -42,7 +42,7 @@ kind: "package-reference"
 
 召回是对两个既有接缝的读取，它不新增任何自己的存储。
 
-记忆折叠来自 `observationalMemory` session projection：与压缩渲染器和记忆命令读取的是同一个折叠，所以召回不可能与它们对「记忆里有什么」产生分歧。解析一个 id 会把一条反思展开为它所引用的观察，把一条观察展开为它所引用的条目。
+记忆来自域包发布到 context 上的账本 store：与压缩渲染器和 `/om` 命令读取的是同一个 store，所以召回不可能与它们对「记忆里有什么」产生分歧。解析一个 id 会把一条反思展开为它所引用的观察，把一条观察展开为它所引用的条目。
 
 来源条目来自 `ctx.sessionQuery`，因为任意的历史读取已不再同步可用。每一个被引用的 seq 都会先被读取、再被追踪，因此一个之后被压缩遮蔽的来源会报告替换它的检查点，而不是读起来像一个仍然到达模型、实则不然的普通条目。
 
@@ -53,10 +53,9 @@ kind: "package-reference"
 <a id="further-exploration"></a>
 ## 延伸阅读
 
-- [`dsh-observational-memory`](../observational-memory/README.zh.md) —— 本工具所读取的账本、它的折叠，以及压缩渲染器。
-- [`docs/subsystems/session-query.md`](../../../docs/subsystems/session-query.zh.md) —— 召回所读取的异步历史接缝。
-- [`dsh-tool-session-query`](../../session-query/tool-session-query/README.zh.md) —— 用于浏览历史的工具；召回针对的是某一个记忆 id。
-- [`生成的工具目录`](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-observational-memory) —— 模型收到的 `memory_recall` schema。
+- [`dsh-observational-memory`](../observational-memory/README.zh.md) —— 本工具所读取的账本、它的转换，以及压缩渲染器。
+- [`src/index.ts`](src/index.ts) —— 工具定义、它自己的提示词章节，以及来源链遍历。
+- [`FREEZE.md`](../../FREEZE.md) —— 记忆为什么离开会话日志，那正是这里变成 store 读取的原因。
 
 -----
 
@@ -66,7 +65,7 @@ kind: "package-reference"
 <details>
 <summary>维护者工作背景——点击展开</summary>
 
-插件有意不把记忆领域包作为服务注入。它按 key 读取 session projection，因此保持为纯消费者：在没有账本的情况下挂载它，会得到「本会话没有折叠任何记忆」，而不是加载失败。
+插件是纯消费者：它读取发布出来的账本 store，自己不新增任何存储。它确实把该 store 声明在 inject 列表里，因此在没有账本的情况下挂载工具会完全得不到工具，而不是得到一个只会回答「没有记忆」的工具。
 
 工具名是 `memory_recall`，而不是 `recall`。`recall` 已经是模型消息词汇表中一个 `ContextForm` 取值，聊天界面会为它渲染一个 "recall" 上下文体，所以把同一个词复用为工具名会与既有含义冲突。
 
@@ -83,7 +82,7 @@ kind: "package-reference"
 
 #### What the model sees
 
-模型看到的生成后的 [`memory_recall` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-observational-memory)：一个对象，包含一个必填的 `id` 字符串，描述为记忆行方括号中打印的十二个字符 id。描述说明这是对已知 id 的查找而非搜索，因此模型不会把它当作浏览历史的手段。
+模型看到的生成后的 `memory_recall` schema：一个对象，包含一个必填的 `id` 字符串，描述为记忆行方括号中打印的十二个字符 id。描述说明这是对已知 id 的查找而非搜索，因此模型不会把它当作浏览历史的手段。
 
 #### Token effect
 
