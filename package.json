@@ -9,7 +9,9 @@
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "check:artifacts": "node scripts/check-artifacts.mjs",
+    "verify": "pnpm run build && pnpm run typecheck && pnpm run test:coverage && pnpm run check:artifacts"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

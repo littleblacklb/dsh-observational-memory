@@ -1,0 +1,19 @@
+# dsh-tool-observational-memory bundle patch
+#
+# Installed through the official CLI:
+#
+#   dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
+#
+# which reconciles `dsh.profile.bundles` against installed packages and, seeing
+# this package's `dsh.bundle.patch`, appends it to the bundle stack. Boot then
+# merges this patch like any other layer, so no profile file needs editing and
+# one command installs and mounts the tool.
+#
+# The row carries no config: the tool registers one name, one schema, and one
+# prompt section. It declares the ledger store in its inject list, so it activates
+# only where `@deepseek-ai/dsh-observational-memory` is also mounted — a
+# deployment without the ledger gets no `memory_recall` rather than a tool that
+# can only ever answer "no memory".
+- insert:
+    - id: tool-observational-memory
+      name: '@deepseek-ai/dsh-tool-observational-memory'

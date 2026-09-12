@@ -19,7 +19,8 @@
   "files": [
     "lib/*.js",
     "lib/*.js.map",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml"
   ],
   "license": "MIT",
   "scripts": {
@@ -48,5 +49,10 @@
     "@deepseek-ai/dsh-session-query": "0.1.5-rc.2",
     "@deepseek-ai/dsh-system-prompt": "0.1.5-rc.2",
     "@deepseek-ai/dsh-tools": "0.1.5-rc.2"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   }
 }
