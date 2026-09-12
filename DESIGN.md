@@ -15,7 +15,15 @@ Landed in `packages/context/observational-memory/` — 102 tests, 100% per-file 
 | 0 — vocabulary & reopen gate | ✅ done | Three `memory/*` events declared, catalog regenerated, round trip proven |
 | 1 — records, pool, render, fold | ✅ done | Builders validate every citation against an allowlist |
 | 2 — observer worker | ✅ done | Cadence gating, chunking, single-flight, teardown |
-| 3–7 | not started | Reflector, dropper, compaction engine, `memory_recall`, UI, model-visible channel |
+| 3 — reflector + dropper | ✅ done | Sequential consolidation; the dropper needs a same-run reflection |
+| 4 — compaction engine | ✅ done | A real compaction renders from memory with **zero model calls**; boots in a live profile |
+| 5 — recall + `/om` | ✅ done | `memory_recall` resolves through the async query seam; `/om status\|view\|show` |
+| 6–7 | ✅ done | Memory tab in the conversation view ring, beside Chat and Trajectory; model-visible channel |
+| 8 | ✅ done | Tab relocated from the composer strip to the view ring on user feedback; Compactions tab added |
+
+Two packages, 263 tests, 100% per-file coverage, and every applicable gate green
+(`gen-persistence-catalog`, `gen-tool-catalog`, `verify-export-jsdoc`, `check-workspace-constraints`, and the three
+package-README gates).
 
 Deviations from the plan above, all recorded where they were discovered:
 
@@ -25,6 +33,15 @@ Deviations from the plan above, all recorded where they were discovered:
   deprecated for new production calls, so `observationSource` folds that surface from the log.
 - **Pool accounting is local.** `ctx.tokenMeter` is a concrete service, not a seam, and pricing per observation through
   it would couple cadence to unrelated context growth; the pool uses the same chars-per-token ratio directly.
+- **A patch cannot re-point a row's module.** `name` on an id-targeted patch is a **match assertion**, not an
+  assignment: `applyEntryPatches` warns `name mismatch … skipping` and never writes it. §4.5's original
+  `- id: compaction-basic` + `name: …/startup` shape was therefore wrong, and the boot-time diagnostic is what exposed
+  it. The working shape is *disable the shipped row, insert the engine under a distinct id*.
+- **The engine is mounted, not constructed.** Because compaction is a singleton that Cordis refuses to provide twice, a
+  second engine fails the whole tree with `service "compaction" has been registered`. The replacement row must be the
+  only provider, which is why the patch disables the original rather than adding beside it.
+- **The engine declares `sessionProjections`.** It reads the memory fold, so the registry is a real dependency; without
+  it the row would activate and fail at the first compaction instead of waiting.
 - **`tests/vocabulary.spec.ts` folds a seeded session through the registered definition**, not through `stateOf`: the
   projection registry eagerly initializes a cell for a `session/created` carry, which a seeded session fires at full
   seed length, so `stateOf` on a seeded session reports the initial state. Durability is proven by the persistence read,
@@ -52,7 +69,8 @@ natively — because DSH already has a durable append-only log, an incremental f
 backend, and a browser UI slot system.
 
 The port is not a rewrite. It is roughly: **the ledger becomes session events, the fold becomes a session projection,
-the compaction hook becomes a `CompactionEngine` subclass, and the `/om:view` command becomes a sidebar tab.**
+the compaction hook becomes a `CompactionEngine` subclass, and the `/om:view` command becomes a Memory tab in the
+conversation view ring.**
 
 ---
 
@@ -90,7 +108,7 @@ This is why the port is smaller than it looks.
 | `pi.registerTool(recall)` | `ctx.tools` registry | `docs/cookbook/adding-a-tool.md` |
 | `/om:status`, `/om:view` | `/om` command family via the commands seam | `docs/subsystems/commands.md` |
 | Worker `agentLoop` + `streamSimple` + ~200 lines of Pi auth logic | **One call:** `ctx.llm.stream({ provider, model, messages, system, tools })` + `BlockAssembler` — routing, auth and prefix-cache handling are the adapter's job | `packages/llm/llm/src/types.ts:419` |
-| `/om:view` clipboard dump | **A real UI**: right-sidebar tab reading `useProjection('observationalMemory')` | `docs/subsystems/slots.md` |
+| `/om:view` clipboard dump | **A real UI**: a Memory tab in the conversation view ring reading `useProjection('observationalMemory')` | `docs/subsystems/slots.md` |
 | Pi settings JSON + `PI_OBSERVATIONAL_MEMORY_PASSIVE` | Schemastery `Config` + the Settings → Plugins config card | `packages/client/ui-settings-plugins/README.md` |
 | Token clocks (`estimateTokens`, `ctx.getContextUsage()`) | `ctx.tokenMeter.measure()` / `estimateMessage()`, or the `contextPressure` projection for the cheap read | `packages/llm/token-meter/src/index.ts:100` |
 
@@ -540,29 +558,52 @@ with `isConcurrencySafe: () => true`, a shared string-output renderer, and a fou
 
 ---
 
-## 5. The Memory strip & explorer
+## 5. The Memory tab & explorer
 
-**Decision: a composer strip is the primary surface**, with the full explorer reachable from it.
+**Decision (revised): a Memory tab in the conversation view ring is the surface**, beside Chat and Trajectory.
 
-The composer strip is the right choice for this feature specifically, because memory is **ambient state, not a
-destination**. You do not go to a memory page; you want to know, while you are typing, that the agent is holding 12
-active observations and 4 reflections and that the last compaction was model-free. A right-sidebar tab would be
-permanently occupying layout for something you glance at — and its content is mostly static between compactions, so the
-space is wasted the vast majority of the time.
+This section originally chose a composer strip, on the argument that memory is **ambient state, not a destination**.
+That argument is wrong for the question the UI actually has to answer. Reading "12 active observations, 4 reflections"
+is ambient, but the reason to open memory at all is **traceability** — the model was shown a line like
+`[a1b2c3d4e5f6] high …`, and you want to check that line against the conversation it came from. That check needs room
+for the record, its provenance, and the cited entries at once, which a one-line strip cannot give: it either truncates
+the evidence or expands into an overlay covering the very conversation it is explaining.
 
 Placement and shape:
 
-- **Strip** into `conversation.composer.dock` (or `conversation.input.dock`), joining Todo and Goal in the
-  composer-context stack — the established home for "small ambient state about this session". One line:
-  observation/reflection counts, active pool pressure against the cap, last-compaction summary, and a worker-in-flight
-  indicator.
-- **Expansion** opens the full traceability explorer (tabs, evidence drill-down) as an overlay from the strip, so the
-  deep view is one click away without claiming permanent layout.
-- **Later, optionally:** the same explorer registered as a right-sidebar tab via `ctx.sidebarRightTabs.register(...)` +
-  the `sidebar.right.pane.tab` keyed slot, for users who want it docked. The two-stage tab API means this is additive and
-  needs no change to the strip.
+- **Tab** registered into the `conversation.view` slot (`ctx.slots.register({ name: 'conversation.view', id: 'memory',
+  order: 20 })`), after Chat (0) and Trajectory (10). It reuses the frame the Trajectory view already occupies, so
+  choosing it is a view switch rather than permanent layout.
+- **Master-detail**, not an overlay: a ledger of every observation, reflection, and tombstone, and a details panel
+  carrying the selected record's full text, state, and cited conversation.
+- **Trajectory's design language, not a look-alike of its own.** Memory is the same kind of surface as Trajectory — a
+  dense ledger of a long session, scanned by column and then inspected one row at a time — so it is built from the same
+  parts: a 32px sticky toolbar of `aria-pressed` pills, a sticky column header over 30px hairline-separated rows that
+  answer hover and selection with `interactive-bg-hover` / `interactive-bg-active`, `Tag` capsules for signal, a 42px
+  details header with a monospace id, a 94px label/value overview grid, and a `clamp(340px, 46%, 640px)` details panel
+  behind a 0.5px `border-l2` rule. Every row is one line that ellipsizes; only the details panel wraps. The view also
+  declares `data-conversation-composer-overlay` so the shell floats the composer over it and both scroll regions reserve
+  `--dsh-composer-height`, which is the contract Trajectory follows for a full-height view.
+- **A fourth Compactions tab** lists each `compaction/summary` the resident event window still holds, showing the route
+  that wrote it and the exact seqs it replaced. This is the traceable-compaction view the feature was asked for, and it
+  is where "this checkpoint cost no model call" becomes visible rather than asserted.
+- **Read-only.** Forcing a pass or dropping a record would need a host Remote mutation surface; more importantly, a page
+  that could edit a record would make "where did this come from" unanswerable.
+- **A second, ambient surface in the composer dock.** The tab answers "what is in memory"; the dock reading answers "how
+  much" without a view switch. It registers into `conversation.composer.dock` beside ui-chat's turn and token pills and
+  mirrors their design — a 24px-radius transparent pill at the tertiary text tier that opens the same anchored,
+  viewport-clamped panel on click — so the status area reads as one region rather than two unrelated strips. It renders
+  nothing at all until a pass has recorded something, and it carries `data-composer-stats`, the dock's own contract for
+  "a statistics row is mounted here", so the composer's bottom clearance accounts for it.
+  - **One row, not one row per contribution.** A list slot renders its entries as bare siblings, so the dock's entries
+    would have stacked: two block-level rows, one per plugin. The container therefore had to change, and it changed in
+    the right place — `InputBar` now wraps the whole dock in `.dockRow` (flex row, centered, `gap: 12px`, wrap, and
+    `:empty` collapse) and owns the geometry the first contribution used to carry alone. Both the session pills and this
+    reading are plain flex items on that row, so any later contribution joins the line instead of starting a new one.
+    The contract is pinned by `input-bar.client.spec.tsx` ("one shared row rather than one row each").
 
-**Client half:** React, `useProjection('observationalMemory')` for data, `ctx.slots.register` for components, and the
+**Client half:** React, `useProjection('observationalMemory')` for records, the session's resident event window
+(`binding.eventSource`, injected through the slot's inject face) for citations, `ctx.slots.register` for the tab, and the
 locale dictionary for all copy (`verify-client-ui-i18n` rejects hardcoded text).
 
 Explorer layout:
@@ -626,7 +667,7 @@ The field set, carrying the reference keys where they still mean the same thing:
 | `passive` | `false` | settings | |
 | `showWorkerNotifications` | `true` | settings | |
 | `debugLog` | `false` | settings | |
-| `strip.visible` | `true` | settings | Composer-strip preference |
+| `memory.tab.visible` | `true` | settings | Memory-tab preference |
 
 Per DSH convention there are **no hardcoded tunables**: every one of these is a validated schema field, and a
 `DEFAULT_*` constant or test hook is not configurability. Registering the settings namespace also makes the plugin appear
@@ -747,8 +788,9 @@ automatic trigger is inherited rather than built (§4.5b), this phase is smaller
 **Phase 5 — recall tool + `/om` commands.** `packages/context/tool-observational-memory` + `memory_recall` over
 `ctx.sessionQuery`; `/om status|view|drop` for the human.
 
-**Phase 6 — composer strip.** The composer-context strip joined to Todo/Goal, with the expansion overlay carrying the
-explorer. In v1.
+**Phase 6 — Memory tab.** The Memory tab registered into the `conversation.view` ring beside Chat and Trajectory, a
+master-detail page over the projection plus the session's event window, with a Compactions tab for traceable
+compaction. In v1, originally built as a composer strip and relocated to the view ring on user feedback (§5).
 
 **Phase 7 — model-visible memory + polish.** Wire `ctx.systemPrompt.context()`, worker notifications, debug log, docs,
 snapshots.
@@ -767,7 +809,7 @@ build + slot registration); all three have working local precedents to copy.
    construction (§4.4).
 4. **No custom compaction trigger.** DSH's `agent/pre-step` pressure trigger is already enabled and our engine inherits
    it; `autoCompact` is dropped from the config surface entirely (§4.5b).
-5. **UI: composer strip primary**, explorer overlay on expansion, optional docked right-sidebar tab later (§5).
+5. **UI: a Memory tab in the conversation view ring** (revised from a composer strip — §5), master-detail explorer, read-only.
 6. **Workers use the session model by default**, with an optional `model` override. The README must state the cost
    caveats prominently — memory work bills against the session model *and is invisible to DSH's own token accounting*
    (§4.3).
