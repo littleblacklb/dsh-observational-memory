@@ -38,27 +38,28 @@ interface AgentAssemblyContext {
 }
 
 /**
- * Read the folded memory a contribution should render.
+ * Read the memory a contribution should render.
  *
- * This plugin registers the projection on its own fiber, so the registry always
- * holds a state for a session it owns; there is no unregistered case to fall
- * back from.
- * @param ctx - context carrying the projection registry.
+ * The store is published on the context by this plugin's own ledger row, so it
+ * is present for as long as this contribution can run. The read is synchronous
+ * and cached, which is what lets a prompt-context callback — which the loop
+ * calls synchronously while assembling a request — reach memory at all.
+ * @param ctx - context carrying the published store.
  * @param agent - the agent whose session the assembly belongs to.
- * @returns the folded memory state.
+ * @returns the ledger for that session.
  */
 function memoryFor(ctx: Context, agent: Agent): ObservationalMemoryState {
-  return ctx.sessionProjections.stateOf(agent.session, 'observationalMemory') as ObservationalMemoryState
+  return ctx.observationalMemoryStore.state(agent.session.id)
 }
 
 /**
  * Render the memory block for one assembly.
  *
  * Returns an empty string when there is nothing to show, which the assembly
- * treats as no contribution at all. The text is a pure function of the folded
- * state, so it is byte-identical between assemblies until memory changes: that
- * is what makes the snapshot deduplicable and the request prefix cacheable.
- * @param ctx - context carrying the projection registry.
+ * treats as no contribution at all. The text is a pure function of the ledger,
+ * so it is byte-identical between assemblies until memory changes: that is what
+ * makes the snapshot deduplicable and the request prefix cacheable.
+ * @param ctx - context carrying the published store.
  * @param agent - the agent whose session the assembly belongs to.
  * @returns the rendered block, or an empty string when memory is empty.
  */

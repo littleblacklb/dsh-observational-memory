@@ -27,7 +27,7 @@ import type { ObservationalMemoryState } from '@deepseek-ai/dsh-observational-me
 export const name = 'tool-observational-memory'
 
 /** Services the tool reads: the registry, the log reader, the fold, and prompt guidance. */
-export const inject = ['tools', 'systemPrompt', 'sessionQuery', 'sessionProjections']
+export const inject = ['tools', 'systemPrompt', 'sessionQuery', 'observationalMemoryStore']
 
 /** Model-facing name of the recall tool. */
 export const RECALL_TOOL_NAME = 'memory_recall'
@@ -242,11 +242,11 @@ export function createRecallTool(ctx: Context): ToolDefinition {
     if (agent === undefined) {
       throw new HarnessError('memory_recall requires an agent-bound caller', 'MEMORY_RECALL_MISSING_AGENT')
     }
-    const state = ctx.sessionProjections.stateOf(
-      agent.session,
-      'observationalMemory',
-    ) as ObservationalMemoryState | undefined
-    if (state === undefined) return nothing('not_found', 'No memory is folded for this session')
+    // An empty ledger and an unknown id are the same answer to the model: there
+    // is nothing under that id. The store always answers, so there is no
+    // "no ledger" case to report — a deployment without the ledger plugin does
+    // not get this tool at all, which is what the inject list below enforces.
+    const state = ctx.observationalMemoryStore.state(agent.session.id) as ObservationalMemoryState
 
     const resolved = resolveMemoryId(id, state)
     if (resolved.kind === 'none') return nothing('not_found', 'No memory record has this id')

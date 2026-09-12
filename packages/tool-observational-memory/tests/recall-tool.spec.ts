@@ -8,6 +8,9 @@
  * subject is the wiring, the query seam, and the refusal paths.
  */
 
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -16,7 +19,7 @@ import SessionStore, { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-s
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import { memoryId, observationalMemoryProjectionDefinition } from '@deepseek-ai/dsh-observational-memory'
+import { memoryId, MemoryStore } from '@deepseek-ai/dsh-observational-memory'
 import * as ToolMemoryRecall from '../src/index.ts'
 
 /** A caller carrying only what a tool run reads. */
@@ -68,7 +71,7 @@ async function harness(options: {
   reads?: readonly SourceRead[]
   traced?: readonly number[]
   withSeam?: boolean
-  /** Skip the memory projection so the tool sees no fold for the session. */
+  /** Skip the ledger store so the tool sees no memory for the session. */
   withProjection?: boolean
 }) {
   const ctx = new Context()
@@ -77,7 +80,10 @@ async function harness(options: {
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   if (options.withSeam !== false) ctx.reflect.provide('sessionQuery', querySeam(options.reads ?? [], options.traced ?? []))
-  if (options.withProjection !== false) ctx.sessionProjections.register(observationalMemoryProjectionDefinition)
+  // The ledger is a store the domain plugin publishes; a test that wants the
+  // tool to see no memory simply does not publish one.
+  const store = new MemoryStore({ storageDir: mkdtempSync(join(tmpdir(), 'om-recall-')), warn: () => {} })
+  if (options.withProjection !== false) ctx.reflect.provide('observationalMemoryStore', store)
   await ctx.plugin(ToolMemoryRecall)
 
   const session = ctx.sessions.create(SessionId('recall-caller'))
@@ -87,32 +93,23 @@ async function harness(options: {
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
   if (options.observations !== undefined) {
-    session.append('memory/observations-recorded', {
-      observations: options.observations.map(record => ({
-        id: memoryId(record.content),
-        content: record.content,
-        timestamp: '2026-01-15 14:30',
-        relevance: 'high' as const,
-        sourceSeqs: record.sourceSeqs,
-      })),
-      coversUpToSeq: SessionSeq(session.seq),
-    })
+    store.recordObservations(session.id, options.observations.map(record => ({
+      id: memoryId(record.content),
+      content: record.content,
+      timestamp: '2026-01-15 14:30',
+      relevance: 'high' as const,
+      sourceSeqs: record.sourceSeqs,
+    })), session.seq)
   }
   if (options.reflections !== undefined) {
-    session.append('memory/reflections-recorded', {
-      reflections: options.reflections.map(record => ({
-        id: memoryId(record.content),
-        content: record.content,
-        supportingObservationIds: record.supportingObservationIds,
-      })),
-      coversUpToSeq: SessionSeq(session.seq),
-    })
+    store.recordReflections(session.id, options.reflections.map(record => ({
+      id: memoryId(record.content),
+      content: record.content,
+      supportingObservationIds: record.supportingObservationIds,
+    })), session.seq)
   }
   if (options.dropped !== undefined) {
-    session.append('memory/observations-dropped', {
-      observationIds: options.dropped.map(record => memoryId(record.content)),
-      coversUpToSeq: SessionSeq(session.seq),
-    })
+    store.recordDrops(session.id, options.dropped.map(record => memoryId(record.content)), session.seq)
   }
 
   let call = 0
@@ -312,14 +309,19 @@ describe('memory_recall', () => {
     await ctx.fiber.dispose()
   })
 
-  it('reports no folded memory when the ledger plugin is not mounted', async () => {
+  it('does not register at all when the ledger plugin is absent', async () => {
+    // The tool declares the ledger store in its inject list, so a deployment
+    // without the ledger plugin gets no `memory_recall` rather than a tool that
+    // can only ever answer "no memory". The model never sees a dead tool.
     const { ctx, execute } = await harness({
       observations: [{ content: 'a fact', sourceSeqs: [3] }],
       reads: SOURCE,
       withProjection: false,
     })
-    const text = textOf(await execute({ id: memoryId('a fact') }))
-    expect(text).toContain('No memory is folded for this session')
+    // The runtime reports an unregistered tool as a failed result rather than a
+    // rejection, so this asserts on the outcome the model would receive.
+    expect(textOf(await execute({ id: memoryId('a fact') })))
+      .toContain('unknown tool "memory_recall"')
     await ctx.fiber.dispose()
   })
 

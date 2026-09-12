@@ -9,8 +9,8 @@
 
 import { describe, expect, it } from 'vitest'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
-import { memoryId } from '../src/events.ts'
-import type { Observation, Reflection } from '../src/events.ts'
+import { memoryId } from '../src/model.ts'
+import type { Observation, Reflection } from '../src/model.ts'
 import { dropCandidates, observationLineTokens, poolMetrics } from '../src/pool.ts'
 import { observationLine, reflectionLine, renderMemory, MEMORY_USAGE_INSTRUCTIONS } from '../src/render.ts'
 

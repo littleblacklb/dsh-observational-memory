@@ -15,9 +15,9 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
-import { memoryId } from '../src/events.ts'
-import type { Observation, Reflection } from '../src/events.ts'
-import { observationalMemoryProjectionDefinition } from '../src/projection.ts'
+import { memoryId } from '../src/model.ts'
+import type { Observation, Reflection } from '../src/model.ts'
+import { publishStore } from './store-fixture.ts'
 import { createObservationSourceProjection } from '../src/source.ts'
 import type { ObservationSourceEntry } from '../src/source.ts'
 import { registerOmCommands } from '../src/commands.ts'
@@ -52,8 +52,8 @@ async function harness(options: {
   // The command registry authorizes an invocation against the calling agent's
   // turn boundary, so that projection must be live.
   ctx.sessionProjections.register(turnBoundaryProjectionDefinition)
-  ctx.sessionProjections.register(observationalMemoryProjectionDefinition)
   ctx.sessionProjections.register(createObservationSourceProjection())
+  const store = publishStore(ctx)
 
   const session = ctx.sessions.create(SessionId('om-caller'))
   session.append('turn/start', { turn: 1 })
@@ -62,32 +62,23 @@ async function harness(options: {
     source: { kind: 'user' },
   }), { surfaceOp: 'append' })
 
+  // The ledger is a store now, so seeding is a store write rather than an
+  // appended event; the watermark is whatever position the pass is recorded at.
   if (options.observations !== undefined) {
-    session.append('memory/observations-recorded', {
-      observations: options.observations,
-      coversUpToSeq: SessionSeq(session.seq),
-    })
+    store.recordObservations(session.id, options.observations, session.seq)
   }
   if (options.reflections !== undefined) {
-    session.append('memory/reflections-recorded', {
-      reflections: options.reflections,
-      coversUpToSeq: SessionSeq(session.seq),
-    })
+    store.recordReflections(session.id, options.reflections, session.seq)
   }
   if (options.drop !== undefined) {
-    session.append('memory/observations-dropped', {
-      observationIds: options.drop,
-      coversUpToSeq: SessionSeq(session.seq),
-    })
+    store.recordDrops(session.id, options.drop, session.seq)
   }
   if (options.coverage !== undefined) {
-    // Coverage is a fold of the appended events, so a requested watermark is
-    // reached by recording one more pass at that position.
-    session.append('memory/observations-recorded', { observations: [], coversUpToSeq: SessionSeq(session.seq) })
+    store.recordObservations(session.id, [], session.seq)
   }
 
   registerOmCommands(ctx, {
-    memoryOf: agent => ctx.sessionProjections.stateOf(agent.session, 'observationalMemory')!,
+    memoryOf: agent => store.state(agent.session.id),
     sourceEntry: (_agent, seq): ObservationSourceEntry | undefined =>
       (ctx.sessionProjections.stateOf(session, 'observationSource') as { entries: ObservationSourceEntry[] } | undefined)
         ?.entries.find(entry => entry.seq === seq),

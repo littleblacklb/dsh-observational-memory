@@ -8,6 +8,9 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -17,7 +20,7 @@ import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import type { Session } from '@deepseek-ai/dsh-session'
 import * as ObservationalMemory from '../src/index.ts'
 import { sourceEntryAt } from '../src/index.ts'
-import { memoryId } from '../src/events.ts'
+import { memoryId } from '../src/model.ts'
 import { OBSERVER_TOOL_NAME } from '../src/observer.ts'
 import { REFLECTOR_TOOL_NAME } from '../src/reflector.ts'
 import { DROPPER_TOOL_NAME } from '../src/dropper.ts'
@@ -105,6 +108,10 @@ async function mount(options: {
 }): Promise<Context> {
   const ctx = new Context()
   contexts.add(ctx)
+  // Memory is a store this plugin owns, so every mount gets its own directory:
+  // sharing the default would let one test read another's ledger — and would
+  // write into the developer's real harness home.
+  const storageDir = mkdtempSync(join(tmpdir(), 'om-store-'))
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   // The command registry is mounted so the plugin's `/om` family activates,
@@ -138,6 +145,7 @@ async function mount(options: {
     ...options.config,
     model: options.config?.model ?? {},
     passive: options.config?.passive ?? false,
+    storageDir: options.config?.storageDir ?? storageDir,
   })
   return ctx
 }
@@ -182,7 +190,7 @@ async function settle(): Promise<void> {
 }
 
 function memoryOf(ctx: Context, session: Session): ObservationalMemoryState {
-  return ctx.sessionProjections.stateOf(session, 'observationalMemory') as ObservationalMemoryState
+  return ctx.observationalMemoryStore.state(session.id)
 }
 
 afterEach(async () => {
@@ -197,6 +205,27 @@ afterEach(async () => {
   }
   contexts.clear()
   if (failures.length > 0) throw new AggregateError(failures, 'observational-memory wiring cleanup failed')
+})
+
+describe('ledger diagnostics', () => {
+  it('surfaces an unreadable ledger through the plugin logger', async () => {
+    const calls: Call[] = []
+    const storageDir = mkdtempSync(join(tmpdir(), 'om-store-'))
+    const ctx = await mount({
+      calls,
+      config: { model: {}, observeAfterTokens: 1, observeAfterRatio: 0, storageDir },
+    })
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    const session = ctx.sessions.create(SessionId('observer-corrupt-ledger'))
+    route(session)
+    // Written before the session's first read, because the store caches: a
+    // ledger that cannot be read costs the session its memory, so it must be
+    // said out loud rather than quietly replaced by an empty one.
+    writeFileSync(join(storageDir, 'observer-corrupt-ledger.json'), 'not a ledger')
+    conversation(session, 'a turn', 1)
+    await settle()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('not a readable ledger'))
+  })
 })
 
 describe('observer wiring', () => {
@@ -500,16 +529,13 @@ describe('observer wiring', () => {
     const cited = conversation(session, 'a turn', 1)
     // Coverage reaching the last source entry leaves a range that is due by
     // token count but empty to select, so the pass exits without a model call.
-    session.append('memory/observations-recorded', {
-      observations: [{
-        id: memoryId('already recorded'),
-        content: 'already recorded',
-        timestamp: '2026-01-15 14:30',
-        relevance: 'medium',
-        sourceSeqs: [SessionSeq(cited)],
-      }],
-      coversUpToSeq: SessionSeq(cited),
-    })
+    ctx.observationalMemoryStore.recordObservations(session.id, [{
+      id: memoryId('already recorded'),
+      content: 'already recorded',
+      timestamp: '2026-01-15 14:30',
+      relevance: 'medium',
+      sourceSeqs: [cited],
+    }], cited)
     session.append('turn/start', { turn: 2 })
     session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
     await settle()

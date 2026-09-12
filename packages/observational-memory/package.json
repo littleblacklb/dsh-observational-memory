@@ -21,10 +21,10 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "lib/startup.js",
-    "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib/*.js",
+    "lib/*.js.map",
+    "lib/types/**/*.d.ts",
+    "cordis.patch.yml"
   ],
   "license": "MIT",
   "scripts": {

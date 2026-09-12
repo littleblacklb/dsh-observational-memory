@@ -1,10 +1,13 @@
 /**
  * The compaction-engine row this bundle installs.
  *
- * Compaction is a singleton service, so this is not an additional provider:
- * the bundle's patch re-points the shipped `compaction-basic` row at this
- * module. Exporting the engine as its own artifact keeps that row a module the
- * Loader can import directly, exactly as a surface bundle's startup row does.
+ * Compaction is a singleton service, so this is not an additional provider: the
+ * bundle's patch disables the shipped `compaction-basic` row and inserts this
+ * module under its own id. (A patch cannot re-point a row's module — `name` on an
+ * id-targeted patch is a match assertion, not an assignment — and two providers
+ * of one service fail the whole tree.) Exporting the engine as its own artifact
+ * keeps that inserted row a module the Loader can import directly, exactly as a
+ * surface bundle's startup row does.
  *
  * @module @deepseek-ai/dsh-observational-memory/startup
  */

@@ -14,9 +14,9 @@ import SessionStore, { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { memoryId } from '../src/events.ts'
+import { memoryId } from '../src/model.ts'
 import type { Observation, Reflection } from '../src/vocabulary.ts'
-import { observationalMemoryProjectionDefinition } from '../src/projection.ts'
+import { publishStore } from './store-fixture.ts'
 import {
   MEMORY_CONTEXT_NAME,
   MEMORY_CONTEXT_ORDER,
@@ -33,21 +33,21 @@ function reflection(content: string, support: string[]): Reflection {
   return { id: memoryId(content), content, supportingObservationIds: support }
 }
 
-/** Mount the projections and prompt registry, with optional folded memory. */
+/** Mount the prompt registry and a ledger store, with optional seeded memory. */
 async function harness(record?: { observations: Observation[]; reflections: Reflection[] }) {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt)
-  ctx.sessionProjections.register(observationalMemoryProjectionDefinition)
+  const store = publishStore(ctx)
   const session = ctx.sessions.create(SessionId('context-caller'))
   if (record !== undefined) {
-    session.append('memory/observations-recorded', { observations: record.observations, coversUpToSeq: SessionSeq(session.seq) })
+    store.recordObservations(session.id, record.observations, session.seq)
     if (record.reflections.length > 0) {
-      session.append('memory/reflections-recorded', { reflections: record.reflections, coversUpToSeq: SessionSeq(session.seq) })
+      store.recordReflections(session.id, record.reflections, session.seq)
     }
   }
-  return { ctx, session, agent: { session } as unknown as Agent }
+  return { ctx, session, store, agent: { session } as unknown as Agent }
 }
 
 describe('memory context contribution', () => {
@@ -80,12 +80,12 @@ describe('memory context contribution', () => {
   })
 
   it('changes once memory grows, so the model sees the new record', async () => {
-    const { ctx, session, agent } = await harness({ observations: [observation('first fact')], reflections: [] })
+    const { ctx, session, store, agent } = await harness({ observations: [observation('first fact')], reflections: [] })
     const before = renderMemoryContext(ctx, agent)
-    session.append('memory/observations-recorded', {
-      observations: [observation('second fact')],
-      coversUpToSeq: SessionSeq(session.seq),
-    })
+    // The watermark is what makes a pass new: recording again at the position
+    // the harness already covered is a repeat, and repeats are deliberately
+    // no-ops so a retried pass cannot double-apply.
+    store.recordObservations(session.id, [observation('second fact')], session.seq + 1)
     const after = renderMemoryContext(ctx, agent)
     expect(after).not.toBe(before)
     expect(after).toContain('second fact')

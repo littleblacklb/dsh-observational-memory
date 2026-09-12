@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { memoryId } from '../src/events.ts'
-import type { Observation, Reflection } from '../src/events.ts'
+import { memoryId } from '../src/model.ts'
+import type { Observation, Reflection } from '../src/model.ts'
 import { observationLine } from '../src/render.ts'
 import {
   DROPPER_TOOL_NAME,

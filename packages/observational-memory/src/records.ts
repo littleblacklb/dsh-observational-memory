@@ -15,7 +15,7 @@ import {
   OBSERVATION_TIMESTAMP_PATTERN,
   RELEVANCE_ORDER,
 } from './vocabulary.ts'
-import { formatObservationTimestamp, memoryId } from './events.ts'
+import { formatObservationTimestamp, memoryId } from './model.ts'
 import type { Observation, Reflection, Relevance } from './vocabulary.ts'
 
 /** Longest single-line content accepted from a worker, matching the record cap. */

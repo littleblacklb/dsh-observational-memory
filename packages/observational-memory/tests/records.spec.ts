@@ -8,8 +8,8 @@
 
 import { describe, expect, it } from 'vitest'
 import { SessionSeq } from '@deepseek-ai/dsh-session'
-import { coverageOf, formatObservationTimestamp, memoryId, MEMORY_ID_PATTERN } from '../src/events.ts'
-import type { Observation, Reflection } from '../src/events.ts'
+import { coverageOf, formatObservationTimestamp, memoryId, MEMORY_ID_PATTERN } from '../src/model.ts'
+import type { Observation, Reflection } from '../src/model.ts'
 import {
   buildObservation,
   buildReflection,

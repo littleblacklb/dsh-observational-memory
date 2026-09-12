@@ -29,8 +29,8 @@ import SessionStore, { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-s
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 import MemoryCompactionEngine, { MEMORY_MODEL, MEMORY_PROVIDER } from '../src/compaction-engine.ts'
-import { memoryId } from '../src/events.ts'
-import { observationalMemoryProjectionDefinition } from '../src/projection.ts'
+import { memoryId } from '../src/model.ts'
+import { publishStore } from './store-fixture.ts'
 
 const MODEL = 'test-model'
 const PROVIDER = 'test-provider'
@@ -72,7 +72,7 @@ function createContext(contextWindow = 1_000): Context {
   void new TokenMeter(ctx)
   void new SessionStore(ctx)
   ctx.llm.registerAdapter([PROVIDER], new ContextAdapter(contextWindow))
-  ctx.sessionProjections.register(observationalMemoryProjectionDefinition)
+  publishStore(ctx)
   return ctx
 }
 
@@ -127,17 +127,14 @@ function conversation(turns = 6, text = 'fixture '.repeat(40).trim()): Session {
 }
 
 /** Record one observation set so the engine has memory to render. */
-function recordMemory(session: Session, observations: readonly string[]): void {
-  session.append('memory/observations-recorded', {
-    observations: observations.map((content, index) => ({
-      id: memoryId(content),
-      content,
-      timestamp: '2026-01-15 14:30',
-      relevance: 'high' as const,
-      sourceSeqs: [index],
-    })),
-    coversUpToSeq: SessionSeq(0),
-  })
+function recordMemory(ctx: Context, session: Session, observations: readonly string[]): void {
+  ctx.observationalMemoryStore.recordObservations(session.id, observations.map((content, index) => ({
+    id: memoryId(content),
+    content,
+    timestamp: '2026-01-15 14:30',
+    relevance: 'high' as const,
+    sourceSeqs: [index],
+  })), 0)
 }
 
 /**
@@ -167,7 +164,7 @@ describe('memory-rendered compaction', () => {
     summarizerCalls = 0
     const ctx = createContext()
     const session = conversation()
-    recordMemory(session, ['User switched the API to GraphQL.', 'Migration completed and was validated.'])
+    recordMemory(ctx, session, ['User switched the API to GraphQL.', 'Migration completed and was validated.'])
 
     const { text, result } = await compact(ctx, session)
 
@@ -185,7 +182,7 @@ describe('memory-rendered compaction', () => {
     summarizerCalls = 0
     const ctx = createContext()
     const session = conversation()
-    recordMemory(session, ['A durable fact.'])
+    recordMemory(ctx, session, ['A durable fact.'])
 
     await compact(ctx, session)
 
@@ -212,7 +209,7 @@ describe('memory-rendered compaction', () => {
     const ctx = createContext()
     // A short conversation cannot be improved by a long memory render.
     const session = conversation(1, 'tiny')
-    recordMemory(session, Array.from({ length: 60 }, (_value, index) => `a fairly long observation number ${String(index)} that keeps going`))
+    recordMemory(ctx, session, Array.from({ length: 60 }, (_value, index) => `a fairly long observation number ${String(index)} that keeps going`))
 
     const { text } = await compact(ctx, session)
 
@@ -224,7 +221,7 @@ describe('memory-rendered compaction', () => {
     summarizerCalls = 0
     const ctx = createContext()
     const session = conversation()
-    recordMemory(session, ['A durable fact.'])
+    recordMemory(ctx, session, ['A durable fact.'])
 
     const engine = new MemoryCompactionEngine(ctx, { auto: false })
     const first = await engine.compactIfNeeded(agentFor(session), 'pressure', new AbortController().signal)
@@ -250,24 +247,18 @@ describe('memory-rendered compaction', () => {
     const ctx = createContext()
     const session = conversation()
     const content = 'The public API is GraphQL.'
-    session.append('memory/observations-recorded', {
-      observations: [{
-        id: memoryId('Switched to GraphQL.'),
-        content: 'Switched to GraphQL.',
-        timestamp: '2026-01-15 14:30',
-        relevance: 'high',
-        sourceSeqs: [0],
-      }],
-      coversUpToSeq: SessionSeq(0),
-    })
-    session.append('memory/reflections-recorded', {
-      reflections: [{
-        id: memoryId(content),
-        content,
-        supportingObservationIds: [memoryId('Switched to GraphQL.')],
-      }],
-      coversUpToSeq: SessionSeq(0),
-    })
+    ctx.observationalMemoryStore.recordObservations(session.id, [{
+      id: memoryId('Switched to GraphQL.'),
+      content: 'Switched to GraphQL.',
+      timestamp: '2026-01-15 14:30',
+      relevance: 'high',
+      sourceSeqs: [0],
+    }], 0)
+    ctx.observationalMemoryStore.recordReflections(session.id, [{
+      id: memoryId(content),
+      content,
+      supportingObservationIds: [memoryId('Switched to GraphQL.')],
+    }], 0)
 
     const { text } = await compact(ctx, session)
     expect(text).toContain('## Reflections')
@@ -286,7 +277,7 @@ describe('engine activation', () => {
     // `compaction` service, so its row must activate only once every service it
     // reads exists.
     expect(BasicCompactionEngine.inject).toEqual(['llm', 'tokenMeter', 'sessions'])
-    expect(MemoryCompactionEngine.inject).toEqual(['llm', 'tokenMeter', 'sessions', 'sessionProjections'])
+    expect(MemoryCompactionEngine.inject).toEqual(['llm', 'tokenMeter', 'sessions', 'observationalMemoryStore'])
   })
 
   it('becomes the compaction service when mounted alone', async () => {
@@ -298,7 +289,10 @@ describe('engine activation', () => {
     ctx.llm.registerAdapter([PROVIDER], new ContextAdapter(1_000))
 
     // Mounted as a plugin module, exactly as the Loader mounts the row, it must
-    // activate on its declared inject and provide `ctx.compaction`.
+    // activate on its declared inject and provide `ctx.compaction`. The ledger
+    // store is part of that inject, because the same bundle patch mounts the row
+    // which publishes it — an engine without memory has nothing to render.
+    publishStore(ctx)
     await ctx.plugin(MemoryCompactionEngine, { auto: false })
     const engine = ctx.get('compaction')
     expect(engine).toBeInstanceOf(MemoryCompactionEngine)
@@ -339,7 +333,7 @@ describe('engine activation', () => {
     summarizerCalls = 0
     const ctx = createContext()
     const session = conversation()
-    recordMemory(session, ['A durable fact.'])
+    recordMemory(ctx, session, ['A durable fact.'])
     const { result } = await compact(ctx, session)
     expect(result?.shadowedSeqs.length).toBeGreaterThan(0)
     expect(result?.shadowedRange.start).toBeLessThanOrEqual(result?.shadowedRange.end as number)
@@ -349,7 +343,7 @@ describe('engine activation', () => {
     summarizerCalls = 0
     const ctx = createContext()
     const session = conversation()
-    recordMemory(session, ['A durable fact.'])
+    recordMemory(ctx, session, ['A durable fact.'])
     const { result } = await compact(ctx, session)
     // Every shadowed node drops out of the derived history, and the checkpoint
     // that replaces them is a logged user message, so reconstruction holds.

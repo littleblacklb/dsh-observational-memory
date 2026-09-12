@@ -5,6 +5,7 @@
   "description": "Observational memory for DeepSeek Harness: background observation, reflection, and pruning over the session log, with deterministic model-free compaction",
   "license": "MIT",
   "scripts": {
+    "clean": "rm -rf packages/*/lib packages/*/tsconfig.tsbuildinfo coverage",
     "build": "pnpm -r run build",
     "typecheck": "pnpm -r run typecheck",
     "test": "vitest run",

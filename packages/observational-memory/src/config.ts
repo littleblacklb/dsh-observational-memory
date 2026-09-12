@@ -74,6 +74,15 @@ export interface Config {
   passive?: boolean
   /** Largest generation for one worker call. */
   workerMaxTokens?: number
+  /**
+   * Directory the memory ledger is stored in, one JSON document per session.
+   *
+   * Defaults to `observational-memory` inside the harness home (`$DSH_HOME`, or
+   * `~/.dsh`). Memory lives outside the session log, so this directory — not the
+   * log — is what a backup or a shared machine has to carry for a session to keep
+   * its memory.
+   */
+  storageDir?: string
 }
 
 /** Schemastery validation for {@link Config}. */
@@ -93,6 +102,7 @@ export const Config: z<Config> = z.object({
   }),
   passive: z.boolean(),
   workerMaxTokens: z.number(),
+  storageDir: z.string(),
 })
 
 /** Worker cadence and budgets with every default applied. */
@@ -108,6 +118,8 @@ export interface ResolvedConfig {
   readonly model: Config['model']
   readonly passive: boolean
   readonly workerMaxTokens: number | undefined
+  /** Explicit ledger directory, or undefined to use the harness home. */
+  readonly storageDir: string | undefined
 }
 
 /**
@@ -154,6 +166,9 @@ export function resolveConfig(config: Config = { model: {} }): ResolvedConfig {
     workerMaxTokens: config.workerMaxTokens === undefined
       ? undefined
       : requirePositive(config.workerMaxTokens, 1, 'workerMaxTokens'),
+    storageDir: config.storageDir === undefined || config.storageDir.length === 0
+      ? undefined
+      : config.storageDir,
   }
 }
 

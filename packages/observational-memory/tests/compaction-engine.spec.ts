@@ -11,8 +11,8 @@
 
 import { describe, expect, it } from 'vitest'
 import type { Message } from '@deepseek-ai/dsh-llm'
-import { memoryId } from '../src/events.ts'
-import type { Observation, Reflection } from '../src/events.ts'
+import { memoryId } from '../src/model.ts'
+import type { Observation, Reflection } from '../src/model.ts'
 import type { ObservationalMemoryState } from '../src/vocabulary.ts'
 import {
   MEMORY_MODEL,
@@ -50,22 +50,25 @@ function message(text: string): Message {
   } as Message
 }
 
-describe('reading folded memory', () => {
-  it('reads the session memory state through the projection registry', () => {
+describe('reading the memory ledger', () => {
+  it('reads the session ledger through the published store', () => {
     const folded = state({ observations: [observation('a fact')] })
-    const registry = { stateOf: () => folded }
-    expect(readMemory(registry, {} as never)).toBe(folded)
+    const store = { state: () => folded }
+    expect(readMemory(store, { id: 'session-1' } as never)).toBe(folded)
   })
 
-  it('reports no memory when the registry has none for the session', () => {
-    const registry = { stateOf: () => undefined }
-    expect(readMemory(registry, {} as never)).toBeUndefined()
+  it('reports no memory while the ledger is still empty, so the caller delegates', () => {
+    // An empty ledger and an absent one are the same answer here: compaction
+    // must fall back to the shipped summarizer rather than replace real context
+    // with nothing.
+    const store = { state: () => state({}) }
+    expect(readMemory(store, { id: 'session-1' } as never)).toBeUndefined()
   })
 })
 
 describe('rendering a checkpoint', () => {
   it('delegates when there is no folded memory', () => {
-    expect(readMemory({ stateOf: () => undefined }, {} as never)).toBeUndefined()
+    expect(readMemory({ state: () => state({}) }, { id: 'session-1' } as never)).toBeUndefined()
     expect(renderCheckpoint(undefined, { messages: [message('x'.repeat(4000))] })).toBeUndefined()
   })
 

@@ -17,7 +17,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
+    "lib/*.js",
+    "lib/*.js.map",
     "lib/types/**/*.d.ts"
   ],
   "license": "MIT",

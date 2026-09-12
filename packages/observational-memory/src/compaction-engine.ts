@@ -63,21 +63,22 @@ function estimateTextTokens(text: string): number {
 }
 
 /**
- * Fold one session's memory from the log.
+ * Read one session's memory ledger.
  *
- * The session projection registry is the reader: it folds this session's whole
- * log into the memory state on first touch, which is exactly the reconstruction
- * a resumed process needs. A session with no folded memory yields undefined and
- * the caller delegates.
- * @param projections - the registry to read through.
+ * The store is published on the context by the ledger row, which the same bundle
+ * patch mounts beside this one. A session with nothing recorded yields empty
+ * memory and the caller delegates.
+ * @param store - the published ledger store.
  * @param session - the session being compacted.
- * @returns the folded state, or undefined when none is available.
+ * @returns the ledger, or undefined when nothing has been recorded yet.
  */
 export function readMemory(
-  projections: { stateOf(session: Session, key: 'observationalMemory'): ObservationalMemoryState | undefined },
+  store: { state(sessionId: string): ObservationalMemoryState },
   session: Session,
 ): ObservationalMemoryState | undefined {
-  return projections.stateOf(session, 'observationalMemory')
+  const state = store.state(session.id)
+  const recorded = state.observations.length + state.reflections.length + state.dropped.length
+  return recorded === 0 ? undefined : state
 }
 
 /**
@@ -126,17 +127,15 @@ export function renderCheckpoint(
  */
 export default class MemoryCompactionEngine extends BasicCompactionEngine {
   /**
-   * The inherited services, plus the projection registry the memory fold lives
-   * in.
+   * The inherited services, plus the ledger store this engine renders from.
    *
-   * The registry is required rather than optional: this engine's whole
-   * difference is reading folded memory, and the ledger row that registers that
-   * projection is mounted beside it by the same bundle patch. Declaring the
-   * dependency means the row activates on the same services the original row
-   * declared PLUS the one it actually reads, instead of failing at the first
-   * compaction with an undefined registry.
+   * The store is required rather than optional: this engine's whole difference is
+   * reading memory, and the row that publishes it is mounted beside this one by
+   * the same bundle patch. Declaring the dependency means this row activates on
+   * the same services the original row declared PLUS the one it actually reads,
+   * instead of failing at the first compaction with an undefined store.
    */
-  static override inject = ['llm', 'tokenMeter', 'sessions', 'sessionProjections']
+  static override inject = ['llm', 'tokenMeter', 'sessions', 'observationalMemoryStore']
 
   /**
    * Produce the checkpoint content for one region.
@@ -154,7 +153,7 @@ export default class MemoryCompactionEngine extends BasicCompactionEngine {
     ...args: Parameters<BasicCompactionEngine['summarize']>
   ): ReturnType<BasicCompactionEngine['summarize']> {
     const [input, agent, signal] = args
-    const state = readMemory(this.ctx.sessionProjections, agent.session)
+    const state = readMemory(this.ctx.observationalMemoryStore, agent.session)
     const text = renderCheckpoint(state, input)
     if (text === undefined) return await super.summarize(input, agent, signal)
     return {

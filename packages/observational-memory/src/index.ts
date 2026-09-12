@@ -9,7 +9,6 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { SessionSeq } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import { Config, resolveConfig, resolveObserverChunkTokens, resolveThreshold } from './config.ts'
@@ -18,7 +17,7 @@ import type { Observation } from './vocabulary.ts'
 import { observerCoverage, runObserver, selectObserverChunk, uncoveredTokens } from './observer.ts'
 import { runDropper } from './dropper.ts'
 import { reflectorCoverage, reflectorInputs, runReflector } from './reflector.ts'
-import { observationalMemoryProjectionDefinition } from './projection.ts'
+import { MemoryStore, resolveStorageDir } from './store.ts'
 import type { ObservationalMemoryState } from './vocabulary.ts'
 import { createObservationSourceProjection } from './source.ts'
 import { registerOmCommands } from './commands.ts'
@@ -43,23 +42,44 @@ export {
   RELEVANCE_ORDER,
 } from './vocabulary.ts'
 export type { CoverageTier, Observation, Reflection, Relevance } from './vocabulary.ts'
-export { applyMemoryEvent, observationalMemoryProjectionDefinition } from './projection.ts'
 export { observationalMemoryStateSchema } from './vocabulary.ts'
-export { formatObservationTimestamp, memoryId } from './events.ts'
+export { formatObservationTimestamp, memoryId } from './model.ts'
 export type { ObservationalMemoryState } from './vocabulary.ts'
 export { citedSourceSeqs, resolveMemoryId } from './recall.ts'
 export type { RecallResult, RecalledObservation } from './recall.ts'
 export { renderMemory } from './render.ts'
+export {
+  applyDrops, applyObservations, applyReflections, emptyMemoryState,
+  MemoryStore, resolveDshHome, resolveStorageDir,
+} from './store.ts'
+export type { MemoryStoreHost } from './store.ts'
+
+/**
+ * The ledger store one mounted plugin publishes for its sibling rows.
+ *
+ * The compaction engine is mounted as its own loader row by the same bundle
+ * patch, so it cannot reach this plugin's closure. Publishing the store on the
+ * context is what lets the engine read the same ledger — and what keeps two
+ * applications in one process, or two mounts in one test file, from sharing one.
+ */
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The observational-memory ledger, provided by this plugin. */
+    observationalMemoryStore: MemoryStore
+  }
+}
 
 /** Cordis plugin name used by loader diagnostics. */
 export const name = 'observational-memory'
 
 /**
- * Services required for memory to be recorded and folded.
+ * Services required for memory to be recorded.
  *
- * `llm` is deliberately absent: the ledger and its fold are useful without any
- * model route, so the plugin must not stay PENDING on a deployment that has no
- * LLM service. Only the observer waits for it, through its own injection.
+ * `llm` is deliberately absent: the ledger is useful without any model route, so
+ * the plugin must not stay PENDING on a deployment that has no LLM service. Only
+ * the observer waits for it, through its own injection. `sessionProjections`
+ * stays because the observer's input surface and the context window are both
+ * folds over events the harness itself owns.
  */
 export const inject = ['sessions', 'sessionProjections']
 
@@ -94,17 +114,18 @@ function observerWatermark(state: ObservationalMemoryState): number {
 }
 
 /**
- * Read the session's folded memory state.
+ * Read the session's memory ledger.
  *
- * Both memory projections are registered by {@link apply} on this plugin's own
- * fiber, so their keys exist for as long as any of this code can run: there is
- * no unregistered case to fall back from.
- * @param ctx - context carrying the projection registry.
+ * The store is published on the context by {@link apply}, so it is present for
+ * as long as any of this code can run: the read is synchronous and cached, which
+ * is what lets the model-visible context block and the compaction renderer read
+ * memory without awaiting anything.
+ * @param ctx - context carrying the published store.
  * @param session - the session to read.
- * @returns the folded memory state.
+ * @returns the ledger for that session.
  */
 function memoryOf(ctx: Context, session: Session): ObservationalMemoryState {
-  return ctx.sessionProjections.stateOf(session, 'observationalMemory') as ObservationalMemoryState
+  return ctx.observationalMemoryStore.state(session.id)
 }
 
 /**
@@ -167,7 +188,16 @@ function workerTarget(
  */
 export function apply(ctx: Context, config: Config): void {
   const resolved = resolveConfig(config)
-  ctx.sessionProjections.register(observationalMemoryProjectionDefinition)
+
+  // The ledger is this plugin's own store, published on the context so the
+  // compaction engine's separately-mounted row reads the same one. The
+  // observation surface stays a projection: it folds conversation events the
+  // harness itself declares, so it costs nothing and needs no storage.
+  const store = new MemoryStore({
+    storageDir: resolveStorageDir(resolved.storageDir),
+    warn: message => { ctx.logger.warn(message) },
+  })
+  ctx.reflect.provide('observationalMemoryStore', store)
   ctx.sessionProjections.register(createObservationSourceProjection())
 
   // The human view is registered only where a command registry exists, so the
@@ -265,10 +295,11 @@ export function apply(ctx: Context, config: Config): void {
       }
       status.record('observer', { recorded: run.observations.length, rejected: run.rejections.length })
       if (run.observations.length === 0) return
-      session.append('memory/observations-recorded', {
-        observations: run.observations as Observation[],
-        coversUpToSeq: SessionSeq(run.coversUpToSeq),
-      })
+      ctx.observationalMemoryStore.recordObservations(
+        session.id,
+        run.observations as Observation[],
+        run.coversUpToSeq,
+      )
     }
 
     /**
@@ -311,10 +342,7 @@ export function apply(ctx: Context, config: Config): void {
       // read after the pass so it reflects any observation this consolidation
       // recorded before the reflector ran.
       const observerMark = observerWatermark(memoryOf(ctx, session))
-      session.append('memory/reflections-recorded', {
-        reflections: run.reflections,
-        coversUpToSeq: SessionSeq(observerMark),
-      })
+      ctx.observationalMemoryStore.recordReflections(session.id, run.reflections, observerMark)
       return true
     }
 
@@ -347,10 +375,7 @@ export function apply(ctx: Context, config: Config): void {
       status.record('dropper', { recorded: run.droppedIds.length, rejected: 0 })
       if (run.droppedIds.length === 0) return
       const observerMark = observerWatermark(memoryOf(ctx, session))
-      session.append('memory/observations-dropped', {
-        observationIds: run.droppedIds,
-        coversUpToSeq: SessionSeq(observerMark),
-      })
+      ctx.observationalMemoryStore.recordDrops(session.id, run.droppedIds, observerMark)
     }
 
     /**
