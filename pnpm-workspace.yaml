@@ -1,0 +1,18 @@
+packages:
+  - 'packages/*'
+
+# The harness's own packages install from npm, so a single hoisted linker keeps
+# one copy of every peer: two copies of `@deepseek-ai/dsh-session` would give the
+# loader two distinct `SessionEventMap` declarations and two Context merges.
+nodeLinker: hoisted
+
+# The harness publishes its packages with each other as `peerDependencies`, so a
+# standalone checkout has to resolve that closure itself — a real DSH install is
+# what normally supplies it. Without this, the published `dsh-commands` and
+# `dsh-session` cannot even be imported.
+autoInstallPeers: true
+
+# A transitive native build nothing here calls into; leaving it unbuilt keeps the
+# install hermetic.
+allowBuilds:
+  koffi: false

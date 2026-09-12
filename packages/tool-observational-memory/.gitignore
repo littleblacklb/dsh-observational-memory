@@ -1,0 +1,6 @@
+# Build outputs
+lib/
+coverage/
+
+# Dependencies
+node_modules/

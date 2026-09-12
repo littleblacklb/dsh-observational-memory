@@ -1,0 +1,38 @@
+# dsh-observational-memory bundle patch
+#
+# Installed through the official CLI:
+#
+#   dsh plugin --profile web add @deepseek-ai/dsh-observational-memory
+#
+# which reconciles `dsh.profile.bundles` against installed packages and, seeing
+# this package's `dsh.bundle.patch`, appends it to the bundle stack. Boot then
+# merges this patch like any other layer, so no profile file needs editing.
+#
+# Row 1 mounts the plugin: the memory ledger, its folds, and the background
+# observer, reflector, and dropper passes. The plugin declares no dependency on
+# the LLM service, so the ledger and its fold work even in a deployment that has
+# no model route; only the background passes wait for one.
+#
+# Row 2 disables the shipped compaction backend and row 3 mounts this package's
+# engine in its place. Compaction is a singleton service — `CompactionEngine`
+# calls `super(ctx, 'compaction')` and Cordis `provide()` throws on a duplicate
+# name — so the backend is replaced, never added. Attempting to mount a second
+# engine fails the whole tree with `service "compaction" has been registered`.
+#
+# A patch cannot re-point the shipped row's module: `name` on an id-targeted
+# patch is a MATCH ASSERTION, not an assignment (`applyEntryPatches` warns
+# "name mismatch ... skipping" and never writes it). Disabling that row and
+# inserting this one under a distinct id is therefore the supported shape. The
+# engine inherits the shipped backend's `inject`, so the replacement row
+# activates on the same services the original row declared.
+#
+# To keep the shipped summarizer, disable rows 2 and 3: the plugin then still
+# records and folds memory, and compaction simply does not render from it.
+- insert:
+    - id: observational-memory
+      name: '@deepseek-ai/dsh-observational-memory'
+- id: compaction-basic
+  disabled: true
+- insert:
+    - id: observational-memory-compaction
+      name: '@deepseek-ai/dsh-observational-memory/startup'
