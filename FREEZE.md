@@ -5,13 +5,16 @@ any DeepSeek Harness from npm, with no change to the harness repository itself.
 
 The earlier line — memory stored in the session log with a Memory tab in the web
 client — is frozen, not deleted. It required editing the harness repository, so it
-could never be distributed. It is preserved here:
+could never be distributed. It is preserved here, on branch `parked/browser-ui`,
+and nowhere else: the harness checkout that used to carry both halves has been
+cleaned of them.
 
-| Where | Branch | Commit |
-|---|---|---|
-| `deepseek-harness` checkout (catalogs, tsconfig wiring, composer-dock row) | `memory-tab-integration` | `d8e64c8da6` |
-| `packages/context/observational-memory` | `parked/browser-ui` | `92f44a4` |
-| `packages/context/tool-observational-memory` | `parked/browser-ui` | `3255131` |
+| Where | Commit |
+|---|---|
+| `packages/observational-memory` (the harness's `packages/context/observational-memory`) | `92f44a4` |
+| `packages/tool-observational-memory` (the harness's `packages/context/tool-observational-memory`) | `3255131` |
+| `patches/memory-tab-integration.d8e64c8da6.patch` — the harness-side half: catalogs, tsconfig wiring, composer-dock row | `d8e64c8da6` |
+| `patches/*-independent-plugin-wip.patch` — the uncommitted work the two checkouts carried when they were removed | — |
 
 The two lines share everything except the storage layer:
 
