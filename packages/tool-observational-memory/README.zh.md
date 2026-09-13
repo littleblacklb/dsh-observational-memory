@@ -25,9 +25,10 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-把它挂载在 `@deepseek-ai/dsh-observational-memory` 旁边，后者拥有本工具所读取的记忆账本：
+把它挂载在 `@deepseek-ai/dsh-observational-memory` 旁边，后者拥有本工具所读取的记忆账本。两条命令都要执行：账本只有作为直接依赖安装时才会进入 profile 的 bundle 层，只装本包时它的账本副本只是传递依赖，工具便会一直等待一个从不发布的 store。
 
 ```bash
+dsh plugin --profile web add @deepseek-ai/dsh-observational-memory
 dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 ```
 

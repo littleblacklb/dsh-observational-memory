@@ -25,9 +25,10 @@ Compaction replaces the exact record of what was said with condensed memory, so 
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount it beside `@deepseek-ai/dsh-observational-memory`, which owns the memory ledger this tool reads:
+Mount it beside `@deepseek-ai/dsh-observational-memory`, which owns the memory ledger this tool reads. Both commands are required: the ledger joins the profile's bundle layers only when it is a direct dependency, so installing this package alone leaves its ledger copy transitive, and the tool then waits for a store no layer publishes.
 
 ```bash
+dsh plugin --profile web add @deepseek-ai/dsh-observational-memory
 dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 ```
 
