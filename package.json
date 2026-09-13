@@ -12,7 +12,8 @@
     "test:coverage": "vitest run --coverage",
     "check:artifacts": "node scripts/check-artifacts.mjs",
     "verify": "pnpm run build && pnpm run typecheck && pnpm run test:coverage && pnpm run check:readme-pairing && pnpm run check:artifacts",
-    "check:readme-pairing": "node scripts/check-readme-pairing.mjs"
+    "check:readme-pairing": "node scripts/check-readme-pairing.mjs",
+    "migrate:from-session-events": "node scripts/migrate-from-session-events.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",
