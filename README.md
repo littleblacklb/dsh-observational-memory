@@ -59,7 +59,7 @@ pnpm dsh --profile web web
 
 ## 许可
 
-MIT。两个包都在 `package.json` 里声明了 `license: MIT`。
+MIT。两个包都在 `package.json` 里声明了 `license: MIT`，许可证正文见 [`LICENSE`](LICENSE)。
 
 ## 开发
 

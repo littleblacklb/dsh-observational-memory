@@ -1,4 +1,4 @@
-# HANDOFF — 状态 / 交接（最后更新 2026-09-24 README 改为中文默认 + 首页 banner）
+# HANDOFF — 状态 / 交接（最后更新 2026-09-24 已推送 GitHub、LICENSE 就位、README 中文默认）
 
 > 新对话从这里读起。本文只写**状态、路径、命令**；**不含任何凭据值**（npm token、recovery code、密码一律不入文档、不入仓库、不入对话）。
 
@@ -8,7 +8,7 @@
 
 | | 位置 | 形态 | 状态 |
 |---|---|---|---|
-| **独立线（当前目标）** | 本仓库 `/Users/lb/Documents/Code/dsh-observational-memory` | 两个包：`@deepseek-ai/dsh-observational-memory`（ledger，**store 后端**，`~/.dsh/observational-memory/*.json`）、`@deepseek-ai/dsh-tool-observational-memory`（`memory_recall` 工具）。host-only，无 web 记忆面板 | 开发完成、预检全绿、**未发布到 npm** |
+| **独立线（当前目标）** | 本仓库 `/Users/lb/Documents/Code/dsh-observational-memory` | 两个包：`@deepseek-ai/dsh-observational-memory`（ledger，**store 后端**，`~/.dsh/observational-memory/*.json`）、`@deepseek-ai/dsh-tool-observational-memory`（`memory_recall` 工具）。host-only，无 web 记忆面板 | 开发完成、预检全绿、**已推送到 GitHub `littleblacklb/dsh-observational-memory`（`main` @ `c8523e0`）**、**未发布到 npm** |
 | 冻结线（已放弃） | **本仓库**分支 `parked/browser-ui`（`78964b0`）：`packages/observational-memory`（`92f44a4`）+ `packages/tool-observational-memory`（`3255131`）+ `patches/`（harness 侧补丁，含两个 git bundle） | 把记忆写进 session log + Memory 标签页 | 放弃原因：**必然侵入 harness**（要改 `KNOWN_SESSION_EVENT_TYPES`、persistence 读路径拒绝未知事件类型、上游不接受 PR） |
 
 验收标准（用户明确要求）：**普通用户只安装插件、不改 harness，就能用**。
@@ -52,7 +52,7 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 
 ### 发布前的待办（见 §6）
 
-- 仓库里**没有 `LICENSE` 文件**，而两个 `package.json` 都声明 `license: MIT`。发布后 tarball 里不会有许可证正文。
+- ~~仓库里**没有 `LICENSE` 文件**~~ **已解决**（2026-09-24）：通过远程 `origin` 的 Initial commit 合并进来了根目录 `LICENSE`（MIT，`Copyright (c) 2026 littleblack LB`）。⚠️ 但两个**包目录里仍然没有自己的 LICENSE 副本**，而 npm 自动带上的是**包自身目录里**的 README/LICENSE —— 目前 `files` 只收 `lib/*.js`、`lib/*.js.map`、`lib/types/**/*.d.ts`、`cordis.patch.yml`，所以发布后的 tarball 里仍然没有许可证正文。要不要给两个包各放一份（或改 files 字段）待定。
 
 ## 2. 本机 dsh web 里使用插件
 
@@ -93,7 +93,7 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 | dsh profile | `~/.dsh/profiles/web/` | `package.json`（link 依赖 + `dsh.profile.bundles`）、`cordis.patch.yml`（记忆节奏） |
 | ~~启动 overlay~~ | ~~`~/.dsh/om-web-rows.yml`~~ | **已删除**（2026-09-24）：默认 cadence 已是非动态、tsconfig 劫持也已消失，不再需要 `--patch`；要覆盖配置就用 profile 的 `cordis.patch.yml` |
 | 记忆 ledger | `~/.dsh/observational-memory/<sessionId>.json` | 每会话一个文件 |
-| 扩展仓库 | `/Users/lb/Documents/Code/dsh-observational-memory` | 本仓库（无 git remote） |
+| 扩展仓库 | `/Users/lb/Documents/Code/dsh-observational-memory` | 本仓库；`origin` = `https://github.com/littleblacklb/dsh-observational-memory.git`（public，默认分支 `main`；本地 `main` 跟踪 `origin/main`。凭据走 macOS keychain 里的 HTTPS 凭据，`gh` CLI **未装**，SSH key 未授权给 GitHub —— 所以只能走 HTTPS。照旧**不 push 到别处、不 rewrite history**） |
 | harness 仓库 | `/Users/lb/Documents/Code/deepseek-harness` | 分支 `master` @ `c291e7961a`（2026-09-10），工作树干净、与自身 `origin/master` 同步；**用户要求：不要修改它**（包括不要 `git fetch`）；若某改动无法避免，先说明再让用户判断 |
 
 ## 5. 当前 dsh 版本与漂移结论
@@ -124,7 +124,7 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 
 ## 6. 未决事项
 
-1. **发布前：`LICENSE` 文件缺失**。两个 `package.json` 都写 `license: MIT`，但仓库里没有 `LICENSE` 文件（README 原先那句"见公共仓库的 LICENSE 文件"已改写）。需要用户定版权归属（署名谁、哪一年）后才能补。
+1. ~~**发布前：`LICENSE` 文件缺失**~~ **已解决**（2026-09-24）：根目录 `LICENSE` 已就位（MIT，`Copyright (c) 2026 littleblack LB`，从 GitHub 初始提交合并进来）。**残留待决**：两个包目录里没有各自副本 ⇒ 发布 tarball 仍不带许可证正文（见 §1 发布前待办）。
 2. **发布前：`~/.npm/_cacache` 的 root 属主问题**（§1），根治要用户自己跑 sudo。
 3. **是否 fetch harness 以重新核对上游漂移**（§5），需要用户同意改动其 checkout。
 4. **发布动作本身**：版本仍是 `0.1.5-rc.2`；要不要在首发前提到与新 harness（0.1.7-rc.1）对齐的版本号，未定。

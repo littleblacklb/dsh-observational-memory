@@ -59,7 +59,7 @@ This project builds on [pi-observational-memory](https://github.com/elpapi42/pi-
 
 ## License
 
-MIT. Both packages declare `license: MIT` in their `package.json`.
+MIT. Both packages declare `license: MIT` in their `package.json`, and the license text is in [`LICENSE`](LICENSE).
 
 ## Development
 
