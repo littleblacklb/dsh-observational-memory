@@ -210,10 +210,21 @@ were measured:
   must return a string, and compaction reads the ledger while the agent is between
   steps, so the store does one `readFileSync` per session and stays memory-resident
   after that.
-- **No custom compaction trigger.** DSH's `agent/pre-step` pressure trigger is
-  already enabled and the engine inherits it, so `autoCompact` /
-  `compactAfterTokens` are deliberately absent from the config surface rather than
-  duplicating a scheduler this plugin does not own.
+- **Proactive compaction (replaces the earlier no-custom-trigger decision).**
+  Pi 3.1.4's 81K calibrated source clock starts with the retained tail after
+  compaction. This standalone plugin now checks that clock on the first pre-step
+  of the next turn, after DSH's existing pressure check; unlike Pi's idle-after-
+  turn trigger it cannot compact until another turn begins. It uses the public
+  `compactRegion` transaction (never an emulated open turn or private bundle
+  import) and a single-flight guard. Current surface messages are priced in
+  full, without the observer's 20K-character clipping; system/plugin/checkpoint
+  messages are excluded. Both proactive and native pressure compaction now keep
+  a default recent tail capped at 20K (smaller on small windows) instead of the
+  base backend's 16%-of-window default. Overflow and manual paths are unchanged.
+  If committed observation coverage does not reach the entire selected region,
+  a prior plugin checkpoint needs preservation, or memory cannot shrink it,
+  `summarize` delegates to the native summarizer. Ledger `passive` also disables
+  early triggering and memory-rendered checkpoints, not native pressure.
 - **The compaction render must be strictly smaller** than the region it replaces,
   or it delegates to the default summarizer. Real context is never replaced by
   nothing, and an empty projection always delegates.

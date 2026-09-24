@@ -858,6 +858,7 @@ describe('observer wiring', () => {
     quote.seq = conversation(session, 'A turn.', 1)
     await settle()
 
+    ctx.reflect.provide('compaction', { statusOf: () => ['  auto compact: on (calibrated)'] } as never)
     const execution = await ctx.commands.execute(
       { id: session.id, session } as never,
       '/om status',
@@ -870,6 +871,18 @@ describe('observer wiring', () => {
     const text = execution!.result.kind === 'success' ? execution!.result.text ?? '' : ''
     expect(text).toContain('active observations: 1')
     expect(text).toContain('observer coverage')
+    expect(text).toContain('auto compact: on (calibrated)')
+  })
+
+  it('keeps /om status available when the compaction row is absent or unavailable', async () => {
+    const ctx = await mount({ calls: [] })
+    const session = ctx.sessions.create(SessionId('status-no-compaction'))
+    route(session)
+    const command = () => ctx.commands.execute({ id: session.id, session } as never, '/om status', [], new AbortController().signal)
+    expect((await command())?.result).toMatchObject({ kind: 'success' })
+    ctx.reflect.provide('compaction', { statusOf: () => { throw new Error('unavailable') } } as never)
+    const result = await command()
+    expect(result?.result).toMatchObject({ kind: 'success', text: expect.stringContaining('compact status: unavailable') })
   })
 
   it('resolves a cited source from the observer fold, and nothing for an unknown seq', async () => {

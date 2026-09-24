@@ -68,6 +68,8 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The observational-memory ledger, provided by this plugin. */
     observationalMemoryStore: MemoryStore
+    /** Optional settings seam for the independently mounted compaction engine. */
+    observationalMemoryPolicy?: { readonly passive: boolean }
   }
 }
 
@@ -200,6 +202,7 @@ export function apply(ctx: Context, config: Config): void {
     warn: message => { ctx.logger.warn(message) },
   })
   ctx.reflect.provide('observationalMemoryStore', store)
+  ctx.reflect.provide('observationalMemoryPolicy', { passive: resolved.passive })
   ctx.sessionProjections.register(createObservationSourceProjection())
 
   // The human view is registered only where a command registry exists, so the
@@ -213,6 +216,11 @@ export function apply(ctx: Context, config: Config): void {
       reflectAfterTokens: resolved.reflectAfterTokens,
       passive: resolved.passive,
       status,
+      compactionStatus: agent => {
+        const engine = commandCtx.get('compaction') as { statusOf?: (session: Session) => string[] } | undefined
+        if (engine?.statusOf === undefined) return []
+        try { return engine.statusOf(agent.session) } catch { return ['  compact status: unavailable'] }
+      },
     })
   })
 

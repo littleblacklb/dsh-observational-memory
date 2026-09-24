@@ -55,6 +55,24 @@ source token 包括用户文本、助手文本及工具调用、工具结果中�
 
 把 `observeAfterRatio` 或 `reflectAfterRatio` 设为 `(0, 1)` 之间的比例，即可改为随**当前模型真实上下文窗口**缩放：窗口读取自持久的 `request/context` 事件，因此不产生额外调用，也能在重载后保留 —— 1M token 模型配 `observeAfterRatio: 0.05` 变成每 50,000 token 观察一次，而 128K 模型仍得到适合自己的阈值。比例设为 `0`（默认值）即关闭该比例、使用绝对阈值；adapter 不公布窗口时得到的也是同样的行为。
 
+### 主动压缩与最近原文
+
+替代压缩引擎在每个新 turn 的第一个 `agent/pre-step` 检查一套独立的、**未截断**的来源条目预算；先让 DSH 原有压力策略检查。默认达到约 81,000 source token 时压缩较早的安全区间，保留最近约 20,000 token 原文。1M 窗口模型仍保留 DSH 原有的 80% 压力触发和上下文溢出恢复；与 Pi 的空闲后触发不同，本插件要到**下一轮**才执行主动检查。工具调用与结果不会被拆开；压缩后留下的尾部继续计入下一次 81K，而不是归零。
+
+此计数由 token meter 对当前 session surface 上的**完整消息**估算，包含工具调用和工具结果；不计系统消息、压缩 checkpoint 和插件注入的记忆。它不是 observer 每条最多保留 20,000 字符的来源计数，也不是服务商报告的请求压力。小窗口默认尾部缩为 `min(20000, floor(window * 0.16), effectiveCompactAfterTokens - 1)`；主动和常规压力压缩共用这一默认值。显式配置的 `retainTokens`、`retainRatio` 或精确路由的 `modelPolicies` 保留策略优先（与早压缩阈值冲突时拒绝）。手动 `/compact` 和溢出恢复沿用 DSH 行为。
+
+| 引擎行设置 | 默认值 | 含义 |
+|---|---|---|
+| `autoCompact` | `true` | 开启每轮第一次 pre-step 的额外检查；`false` 不关闭原有压力/溢出策略 |
+| `compactAfterTokens` | `81000` | calibrated 模式的绝对来源预算；比例模式没有窗口时的回退值 |
+| `compactAfterTokensMode` | `calibrated` | `calibrated` 或 `ratio` |
+| `compactAfterTokensRatio` | `0.68` | ratio 模式下窗口的比例 |
+| `thresholdRatio` | `0.8` | DSH 原有的上下文压力触发比例 |
+| `retainTokens` / `retainRatio` | 自适应，最多 `20000` token | 覆盖主动/压力压缩共用的尾部预算；两者互斥 |
+| `auto` | `true` | DSH 引擎自动策略；`false` 同时关闭早压缩和原有自动触发 |
+
+要修改这些值，请配置 **`observational-memory-compaction` 引擎行**，而不是 ledger 的 `observational-memory` 行。记忆为空、未覆盖要被删掉的来源，或渲染后不足以缩小区间时，压缩会委托原生摘要器，不会默默丢失信息。ledger 的 `passive` 会关闭主动记忆压缩和记忆渲染的 checkpoint，但 DSH 原生压力保护仍生效。
+
 ### Worker 模型：默认使用会话模型
 
 除非配置 `model`，记忆 worker 使用会话自己的模型。换成更便宜或更快的路由只需一个字段：
@@ -75,7 +93,7 @@ source token 包括用户文本、助手文本及工具调用、工具结果中�
 
 | 命令 | 显示内容 |
 |---|---|
-| `/om status` | 记录数、observer 的覆盖漂移、活跃池相对 dropper target 的位置、以及各 worker 的水位 |
+| `/om status` | worker 数量和水位、观察池，以及（挂载压缩引擎时）来源预算、有效阈值、保留尾部、请求压力和本进程最近尝试结果 |
 | `/om view` | 压缩此刻会渲染出的确切文本块 |
 | `/om show <id>` | 单条记录，按它的来源链解析 —— 反思展开为它保留的观察，观察展开为它引用的条目 |
 
@@ -104,7 +122,7 @@ source token 包括用户文本、助手文本及工具调用、工具结果中�
 | `model` | 会话模型 | 记忆工作的 `{ provider, model, reasoningEffort }` |
 | `workerMaxTokens` | 适配器默认 | 单次 worker 调用的最大生成长度 |
 | `storageDir` | `$DSH_HOME/observational-memory` | ledger 写入的目录 |
-| `passive` | `false` | 关闭全部后台记忆工作 |
+| `passive` | `false` | 关闭后台记忆工作、主动记忆压缩和记忆渲染的 checkpoint；DSH 压力恢复仍运行 |
 
 非法值会让插件加载失败，而不是静默降级。
 
@@ -125,7 +143,7 @@ source token 包括用户文本、助手文本及工具调用、工具结果中�
 
 后台 pass 在 `turn/end` 落地时由提交后的 `session/event` 流触发，因此缓慢或失败的记忆 pass 既不会阻塞也不会拖垮对话。每个 worker 发一次 `ctx.llm.stream()` 调用，带一个工具 schema，返回的每处引用都会针对它拿到的分块校验：引用了分块之外条目的观察会被整体拒绝，因为部分可信的引用集合会破坏来源链。
 
-压缩集成用一个子类替换默认引擎，只覆写 `summarize`。记忆非空时它直接返回渲染文本，不调用模型；记忆为空、或渲染不会让它替换的区域变小时，它委托给默认摘要器，因此真实上下文永远不会被替换成空。
+压缩集成用子类替换默认引擎，保留 DSH 的持久选区事务，并添加第一次 pre-step 的来源预算触发。只有已提交的 observer 水位覆盖待删来源、区间内没有必须保留的旧插件 checkpoint，且渲染确实能缩小区间时，它才不用模型直接渲染记忆。否则委托原生摘要器，避免过早或不完整的记忆快照默默删掉新工作。
 
 -----
 

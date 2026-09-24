@@ -1,4 +1,4 @@
-# HANDOFF — 状态 / 交接（最后更新 2026-09-24 20:2x CST）
+# HANDOFF — 状态 / 交接（最后更新 2026-09-24 compactAfterTokens 实现与验证完成）
 
 > 新对话从这里读起。本文只写**状态、路径、命令**；**不含任何凭据值**（npm token、recovery code、密码一律不入文档、不入仓库、不入对话）。
 
@@ -57,6 +57,8 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 - profile：`~/.dsh/profiles/web`；bundle 栈：`dsh-base → dsh-web-app → dsh-better-sidebar → @deepseek-ai/dsh-observational-memory → @deepseek-ai/dsh-tool-observational-memory`。profile 的 `cordis.patch.yml` 为空（`[]`），两个 `node_modules/@deepseek-ai` link 都指向本仓库 ⇒ **纯独立线，启动不需要任何 overlay**。
 - 记忆节奏 = **插件默认值**（非动态，commit `b26db28` 起）：`observeAfterTokens 10000`、`reflectAfterTokens 20000`、`observeAfterRatio 0`、`reflectAfterRatio 0`、未知窗口时 `observerChunkMaxTokens` 回退 `60000`。与原项目 `elpapi42/pi-observational-memory` 默认一致。
 - **观察来源（commit `6952302` 起）= 用户文本 + 助手文本（含 tool call）+ tool 结果文本**，每条来源上限 20,000 字符（`MAX_SOURCE_TEXT_CHARS`），插件注入的用户上下文不计入。此前 `tool/result` 是**刻意排除**的，那个理由已被推翻；决策记录见 `docs/decisions.md` 的 "Source scope" 一节。
+- **新增主动压缩（实现与本地验证完成，尚未真实 web 验收）**：引擎行 `observational-memory-compaction` 默认 `compactAfterTokens: 81000`、`compactAfterTokensMode: calibrated`、`compactAfterTokensRatio: 0.68`、`autoCompact: true`；在**下一轮第一次 pre-step** 检查完整来源预算（不裁剪为 observer 的 20K 字符），压缩保留尾部继续计入阈值。与原版 Pi 空闲后触发时机不同。插件替代的压力引擎仍按窗口 80% 兜底，主动/常规压力路径默认都保留约 20K 原文（小窗口缩小），手动与溢出策略不变；来源水位不足时回退原生摘要。不影响未安装插件的 DSH，也不需修改 harness/profile。详见双语 README 与 `docs/decisions.md`。
+- **实施验证**：`pnpm run verify` 已通过（15 文件、313 用例；statement/branch/function/line 覆盖率 100%；README pairing 2/2、artifacts 16/16）。构建产物已更新；**未重启/验证真实 dsh web，也未调用真实模型；未发布 npm**。
 - **source token ≠ 服务商报告的请求 token**：它是本包对这些来源条目自己的估算，所以 `/om status` 的计数与 `ctx.tokenMeter` 统计的不是同一个量，对不上是正常的。
 - ~~当前 profile 是"混搭"状态~~ **已消除**（2026-09-24 核实）：两个 link 都指本仓库；harness `master` 的 `tsconfig.base.json` 已无记忆包映射（实测 grep 无命中），`packages/context/observational-memory` 目录也已不存在。
 - **根因备忘录（最初那个启动失败，仅存历史）**：旧 fork 分支 `tsconfig.base.json`（412-413 行）把 `@deepseek-ai/dsh-observational-memory` / `…-tool-observational-memory` 映射到 `packages/context/…/src`，而子路径 `/startup` 无映射、仍走 `~/.dsh/profiles/web/node_modules` → **一个树里混入了两份实现** → `…/startup: pending (waiting for service: observationalMemoryStore)` → `dsh: 1 entry did not activate`。master 上没有这两行映射，干净 harness 不会遇到。
@@ -70,7 +72,7 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 ## 3. 已完成的验证（不必重做）
 
 - 安装形态：只装 ledger → 2 行 ACTIVE + store 就绪；ledger + tool → 3 行 ACTIVE；**只装 tool → 启动失败**（`tool-observational-memory: pending (waiting for service: observationalMemoryStore)`）。README 已按此修正（commit `4ab40b8`，含中英两份）。
-- 预检全绿：`pnpm run build` / `pnpm run test`（14 文件 **271** 用例）/ `pnpm run check:artifacts`（16/16）/ `pnpm run check:readme-pairing`（2/2）。用例数从 266 涨到 271 是 commit `6952302`（tool 输出纳入 source）加的 5 个，不是 flaky —— 已逐文件核对 vitest 计数与静态 `it(` 计数完全吻合。
+- 历史预检（新功能改动前）：`pnpm run build` / `pnpm run test`（14 文件 **271** 用例）/ `pnpm run check:artifacts`（16/16）/ `pnpm run check:readme-pairing`（2/2）。用例数从 266 涨到 271 是 commit `6952302`（tool 输出纳入 source）加的 5 个。新功能预检见 §2（15 文件、313 用例）。
 - **`pnpm run verify` 是含覆盖率的那道总门**（= build + typecheck + test:coverage + check:readme-pairing + check:artifacts）。上面四条是它的组成部分，别再只跑四条就宣布全绿。
 - **覆盖率表里 `startup.ts` 那行显示 `0 | 0 | 0 | 0` 是正常的，别去查**（2026-09-24 核实）：该文件是纯 re-export（`export { default } from './compaction-engine.ts'`），在 v8 原始数据（`coverage/coverage-final.json`）里 `statementMap` / `fnMap` / `b` **全为空** —— 0/0 个可覆盖单元，vitest 把 0/0 渲染成了 0%。门确实在跑（`vitest.config.ts:29-35`，`perFile: true` + 四项 100%）且通过；除它之外每个文件都是 100%。
 - **本轮新增的链接检查**：`check:readme-pairing` 只校验中英结构配对，**抓不到坏链接**。2026-09-24 全仓库扫过一遍，修掉了 ledger README 中英各 2 处 `../../tool-observational-memory/README.md`（多了一级，正确是 `../tool-observational-memory/README.md`）。改动 md 后建议重跑一次同类扫描。

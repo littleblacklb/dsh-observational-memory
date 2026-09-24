@@ -55,6 +55,24 @@ Source tokens include user text, assistant text and tool calls, and the text of 
 
 Set `observeAfterRatio` or `reflectAfterRatio` to a fraction in `(0, 1)` to scale that clock to the **active model's real context window** instead. The window is read from the durable `request/context` event, so it costs no extra call and survives a reload: a 1M-token model with `observeAfterRatio: 0.05` observes every 50,000 tokens rather than every 10,000, while a 128K model keeps a threshold that suits its window. A ratio of `0` — the default — disables the ratio and uses the absolute count, and so does an adapter that declines to advertise a window.
 
+### Proactive compaction and recent history
+
+The replacement compaction engine checks a separate **unclipped** source-entry budget at the first `agent/pre-step` of each new turn, after DSH's normal pressure policy has had its chance. At 81,000 estimated source tokens (default, since the retained tail after the last successful compaction), it compacts the older safe range and keeps roughly 20,000 recent tokens verbatim. A 1M-window model still has DSH's 80%-of-window pressure and context-overflow recovery; the plugin's early check waits for the **next turn**, unlike Pi's idle-after-turn trigger. Tool call/result pairs stay together. The retained tail counts toward the next 81,000, so the budget does not restart at zero.
+
+This clock uses the token meter's **full messages** on the current session surface, including tool results and tool calls; it excludes system messages, compaction checkpoints and plugin-injected memory. It is not the observer's 20,000-character-capped source clock and not provider-reported request pressure. On small windows the default tail shrinks to `min(20000, floor(window * 0.16), effectiveCompactAfterTokens - 1)`; both early and normal pressure compaction use this default. An explicit `retainTokens`, `retainRatio`, or exact `modelPolicies` retention takes precedence (and an incompatible early threshold is rejected). Manual `/compact` and overflow recovery keep their existing DSH behavior.
+
+| Engine-row setting | Default | Meaning |
+|---|---|---|
+| `autoCompact` | `true` | Enable the additional first-pre-step check; `false` leaves native pressure/overflow on |
+| `compactAfterTokens` | `81000` | Absolute source budget in calibrated mode; fallback when a ratio has no window |
+| `compactAfterTokensMode` | `calibrated` | `calibrated` or `ratio` |
+| `compactAfterTokensRatio` | `0.68` | Window fraction when mode is `ratio` |
+| `thresholdRatio` | `0.8` | DSH's existing context-pressure trigger |
+| `retainTokens` / `retainRatio` | adaptive, up to `20000` tokens | Override the shared early/pressure tail budget; mutually exclusive |
+| `auto` | `true` | DSH engine auto policy; `false` disables both early and native automatic triggers |
+
+To change these values, configure the **`observational-memory-compaction` row**, not the ledger's `observational-memory` row. If memory is empty, incomplete for the portion being removed, or too large to shrink the range, compaction delegates to the native summarizer rather than silently losing source information. `passive` on the ledger disables early memory compaction and memory-rendered checkpoints, but native pressure protection stays on.
+
 ### Worker model: the session model by default
 
 Memory workers use the session's model unless you configure `model`. Setting a cheaper or faster route is a single field:
@@ -75,7 +93,7 @@ Memory reaches the model as a block of id-tagged lines. The `/om` family is how 
 
 | Command | Shows |
 |---|---|
-| `/om status` | Record counts, the observer's coverage drift, the active pool against the dropper's target, and per-worker watermarks |
+| `/om status` | Worker counts and coverage, the observation pool, and (when mounted) compaction source budget, effective threshold, tail, pressure, and last in-process outcome |
 | `/om view` | The exact block compaction would render right now |
 | `/om show <id>` | One record, resolved through its provenance — a reflection to the observations it preserves, an observation to the entries it cites |
 
@@ -104,7 +122,7 @@ This directory — not the session log — is what a backup has to carry for a s
 | `model` | the session model | `{ provider, model, reasoningEffort }` for memory work |
 | `workerMaxTokens` | adapter default | Largest generation for one worker call |
 | `storageDir` | `$DSH_HOME/observational-memory` | Directory the ledger is written to |
-| `passive` | `false` | Disable all background memory work |
+| `passive` | `false` | Disable background memory work, early memory compaction and memory-rendered checkpoints; DSH pressure recovery remains active |
 
 Invalid values fail plugin load rather than degrading silently.
 
@@ -125,7 +143,7 @@ The store around them caches per session and writes through on every mutation. I
 
 A background pass runs off the post-commit `session/event` feed when a `turn/end` lands, so a slow or failing memory pass can neither block nor fail the conversation. Each worker makes one `ctx.llm.stream()` call with a single tool schema, and every citation it returns is validated against the chunk it was given: an observation citing an entry outside its chunk is rejected whole, because a partially trusted citation set would corrupt provenance.
 
-The compaction integration replaces the default engine with a subclass that overrides `summarize`. When memory is non-empty it returns the rendered text without calling a model; when memory is empty, or when the render would not shrink the region it replaces, it delegates to the default summarizer, so real context is never replaced by nothing.
+The compaction integration replaces the default engine with a subclass that keeps DSH's durable range transaction and adds a first-pre-step source-budget trigger. It renders memory without a model call only when the committed observer watermark covers the source region, no prior plugin checkpoint in it requires preservation, and the result shrinks the range. Otherwise it delegates to the default summarizer, so a premature or incomplete memory snapshot cannot silently erase newer work.
 
 -----
 

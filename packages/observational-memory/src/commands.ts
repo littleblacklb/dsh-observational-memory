@@ -39,6 +39,8 @@ export interface OmCommandsHost {
   readonly sourceEntry?: (agent: Agent, seq: number) => { role: string; text: string } | undefined
   /** Process-local worker outcomes, so "idle" and "broken" read differently. */
   readonly status: MemoryStatus
+  /** Optional compaction-row diagnostics (ledger-only deployments have no engine). */
+  readonly compactionStatus?: (agent: Agent) => string[]
 }
 
 /** Render the observation-pool line for `/om status`. */
@@ -61,7 +63,7 @@ function driftLine(state: ObservationalMemoryState): string {
  * @param host - the cadence and budget the plugin resolved.
  * @returns the status text.
  */
-export function renderStatus(state: ObservationalMemoryState, host: OmCommandsHost): string {
+export function renderStatus(state: ObservationalMemoryState, host: OmCommandsHost, agent?: Agent): string {
   const coverage = state.coverage
   const mark = (value: number | null): string => value === null ? 'not yet' : `through #${String(value)}`
   return [
@@ -74,6 +76,7 @@ export function renderStatus(state: ObservationalMemoryState, host: OmCommandsHo
     `  reflector coverage: ${mark(coverage.reflector)} (every ~${String(host.reflectAfterTokens)} source tokens)`,
     `  dropper coverage: ${mark(coverage.dropper)}`,
     ...renderWorkerStatus(host.status.snapshot()),
+    ...agent === undefined ? [] : (host.compactionStatus?.(agent) ?? []),
   ].join('\n')
 }
 
@@ -152,7 +155,7 @@ export function registerOmCommands(ctx: Context, host: OmCommandsHost): void {
       const input = invocation.rawInput.trim()
       const state = memoryOf(invocation)
       if (input === '' || input === 'status') {
-        return { kind: 'success', text: renderStatus(state, host) }
+        return { kind: 'success', text: renderStatus(state, host, invocation.agent) }
       }
       if (input === 'view') {
         const text = renderView(state)
