@@ -1,26 +1,30 @@
-# Observational Memory for DeepSeek Harness
+# 面向 DeepSeek Harness 的观察式记忆
 
-An observational-memory plugin for long-running [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) sessions, adapted from [elpapi42/pi-observational-memory](https://github.com/elpapi42/pi-observational-memory). It captures useful facts while a session is active, keeps a traceable memory ledger, and renders that memory at compaction time instead of asking a model to summarize the same history again.
+[English](README.en.md) | 中文
 
-**This is a DeepSeek Harness implementation, not a Pi extension.** The installable `main` branch is host-only: it does not include a browser Memory panel and does not require changes to the Harness source tree.
+![dsh observational memory：捕获会话观察、提炼有用的记忆、之后召回它们](docs/assets/banner.webp)
 
-## What it does
+一个为长时间运行的 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 会话提供的观察式记忆插件，改编自 [elpapi42/pi-observational-memory](https://github.com/elpapi42/pi-observational-memory)。它在会话进行中捕获有用的事实，保留一份可追溯的记忆账本，并在压缩时渲染这些记忆，而不是让模型把同一段历史再总结一遍。
 
-- **Observe, reflect, prune:** background workers record source-cited observations, distill longer-lived reflections, and bound the active memory pool. The conversation continues while they run.
-- **Remember across compaction:** the plugin renders its stored memory into a compaction summary without a model call when the memory is non-empty and the result would shrink the compacted region. Otherwise it falls back to the standard summarizer.
-- **Trace claims to their sources:** observations cite conversation entries; reflections cite observations. `/om show <id>` and the optional `memory_recall` tool follow those links, reporting missing evidence rather than inventing it.
-- **Install without a Harness fork:** the ledger and recall tool are separate plugin bundles. The ledger owns a per-session JSON store instead of writing custom event types into the Harness session log.
+**这是 DeepSeek Harness 的实现，不是 Pi 扩展。** 可安装的 `main` 分支是 host-only 的：它不包含浏览器记忆面板，也不需要对 Harness 源码树做任何改动。
 
-## Packages
+## 它做什么
 
-| Package | Role |
+- **观察、反思、剪枝：** 后台 worker 记录带来源引用的观察、提炼更持久的反思，并给活跃记忆池设上界。它们运行的时候，对话照常继续。
+- **跨压缩记忆：** 当记忆非空、且结果会让被压缩的区域变短时，插件不调用模型，直接把自己的记忆渲染进压缩摘要；否则回退到标准摘要器。
+- **把断言追溯回来源：** 观察引用对话条目，反思引用观察。`/om show <id>` 与可选的 `memory_recall` 工具沿着这些链接走，遇到缺失的证据就如实报告，而不是编造。
+- **不 fork Harness 也能安装：** 账本与召回工具是两个独立的插件 bundle。账本持有每会话一个 JSON 存储，而不是往 Harness 会话日志里写自定义事件类型。
+
+## 包
+
+| 包 | 作用 |
 | --- | --- |
-| [`@deepseek-ai/dsh-observational-memory`](packages/observational-memory/README.md) | Ledger, background workers, `/om` commands, and compaction integration. Install this first. |
-| [`@deepseek-ai/dsh-tool-observational-memory`](packages/tool-observational-memory/README.md) | Optional `memory_recall` model tool. Requires the ledger bundle to be installed directly in the same profile. |
+| [`@deepseek-ai/dsh-observational-memory`](packages/observational-memory/README.md) | 账本、后台 worker、`/om` 命令与压缩集成。先装这个。 |
+| [`@deepseek-ai/dsh-tool-observational-memory`](packages/tool-observational-memory/README.md) | 可选的 `memory_recall` 模型工具。要求账本 bundle 直接安装在同一个 profile 里。 |
 
-## Status and local installation
+## 状态与本地安装
 
-The packages are at **`0.1.5-rc.2`** in this repository. **They have not yet been published to npm.** For now, build and install them from a local checkout. This example uses the `web` profile; substitute your profile name if needed.
+本仓库中的两个包版本是 **`0.1.5-rc.2`**。**它们尚未发布到 npm。** 目前请从本地 checkout 构建并安装。下例使用 `web` profile；如果你的 profile 名不同，请替换。
 
 ```bash
 cd /path/to/dsh-observational-memory
@@ -35,29 +39,29 @@ pnpm dsh plugin --profile web add "$TOOL_DIR"
 pnpm dsh --profile web web
 ```
 
-Build again after changing plugin `src/`: the bundle loads `lib/`, and the packages do not have a prepack build hook. Install **both packages as direct profile dependencies** if you want `memory_recall`; installing only the tool leaves it waiting for the ledger store. The plugin bundles supply their own profile patches, so no Harness source changes or manual profile edits are needed.
+改完插件 `src/` 要重新构建：bundle 加载的是 `lib/`，而这两个包没有 prepack 构建钩子。想要 `memory_recall`，就必须**把两个包都作为 profile 的直接依赖安装**；只装工具会让它一直等待账本 store。插件 bundle 自带各自的 profile 补丁，因此不需要改动 Harness 源码，也不需要手工编辑 profile。
 
-To check the installation, run `/om status` in a session. `/om view` shows the memory block that compaction would render; `/om show <12-character-id>` resolves one record's provenance. The model can call `memory_recall` with an ID it has seen. An empty memory view in a new session is normal until an observation pass has run. There is no Web Memory tab on `main`.
+想确认安装是否生效，在会话里运行 `/om status`。`/om view` 显示压缩将要渲染的记忆块；`/om show <12 位 id>` 解析某一条记录的来源。模型可以用它见过的 id 调用 `memory_recall`。新会话里记忆视图为空是正常的，直到 observer pass 跑过一次。`main` 上没有 Web 记忆标签页。
 
-## Storage and trade-offs
+## 存储与取舍
 
-Memory is stored separately from session logs at `$DSH_HOME/observational-memory/<sessionId>.json` (by default `~/.dsh/observational-memory/`). Back up this directory along with your sessions: copying or replaying a session log alone does not carry its memory, and a fork starts with a new memory ledger. You can change the location with `storageDir`.
+记忆与会话日志分开存储，位置是 `$DSH_HOME/observational-memory/<sessionId>.json`（默认 `~/.dsh/observational-memory/`）。请把这个目录和你的会话一起备份：只复制或重放会话日志不会带上它的记忆，fork 出来的会话会从一份新的记忆账本开始。可以用 `storageDir` 改位置。
 
-Background passes use an LLM and consume tokens. By default they use the session model; you can configure a different `model`. Their usage is not currently reflected in the Harness session token meter. Cadence, pool size, worker limits, and passive mode are configurable; see the [ledger package reference](packages/observational-memory/README.md#configuration).
+后台 pass 会调用 LLM 并消耗 token。默认使用会话模型，你也可以配置另一个 `model`。它们的用量目前不会反映在 Harness 的会话 token 计量里。节奏、池大小、worker 上限与被动模式都可配置；见[账本包参考](packages/observational-memory/README.md#configuration)。
 
-## Browser UI experiment
+## 浏览器 UI 实验
 
-The frozen [`parked/browser-ui` branch](FREEZE.md) preserves an earlier design with a read-only Memory tab beside Chat and Trajectory, plus a memory reading below the composer. **This is not part of the `main` release or an alternative install switch.** That design stored memory in session-log events and required a patch to DeepSeek Harness (including its known session event types and client wiring). The branch retains the plugin-side code and the Harness patch for reference; see [why it was parked](FREEZE.md). Do not apply that patch to use the standalone packages above.
+已冻结的 [`parked/browser-ui` 分支](FREEZE.md)保留了一套更早的设计：Chat、Trajectory 旁边的只读 Memory 标签页，加上输入框下方的一条记忆读数。**它不属于 `main` 版本，也不是另一种安装开关。** 那套设计把记忆存在会话日志事件里，并且需要对 DeepSeek Harness 打补丁（包括它的已知会话事件类型与客户端接线）。该分支保留了插件侧代码与 Harness 补丁以供参考；见[它为什么被搁置](FREEZE.md)。不要为了使用上面的独立包去套用那个补丁。
 
-## Origin and credits
+## 由来与致谢
 
-This project builds on [pi-observational-memory](https://github.com/elpapi42/pi-observational-memory) by elpapi42 and its contributors: its observation → reflection → pruning model and traceable memory approach informed this implementation. The Harness-specific storage, compaction integration, commands, and package wiring are documented here and in the package references. Thanks to the upstream authors for publishing their work under the MIT license.
+本项目基于 elpapi42 及其贡献者的 [pi-observational-memory](https://github.com/elpapi42/pi-observational-memory)：它的「观察 → 反思 → 剪枝」模型与可追溯记忆的思路影响了本次实现。Harness 专属的存储、压缩集成、命令与包接线记录在这里以及各包的参考文档中。感谢上游作者以 MIT 许可发布他们的工作。
 
-## License
+## 许可
 
-MIT. Both packages declare `license: MIT` in their `package.json`.
+MIT。两个包都在 `package.json` 里声明了 `license: MIT`。
 
-## Development
+## 开发
 
 ```bash
 pnpm run build
@@ -65,18 +69,18 @@ pnpm run test
 pnpm run check:artifacts
 ```
 
-`pnpm run verify` runs the whole gate: build, typecheck, 100% per-file coverage, README-pairing, and the built-artifact check.
+`pnpm run verify` 跑完整门禁：构建、类型检查、逐文件 100% 覆盖率、README 配对与构建产物检查。
 
-See [the frozen-line explanation](FREEZE.md) for the session-log trade-off and the package READMEs for configuration and implementation details.
+关于会话日志那条取舍见[冻结线的说明](FREEZE.md)，配置与实现细节见各包 README。
 
-## Repository layout
+## 仓库结构
 
-| Path | What it is |
+| 路径 | 是什么 |
 | --- | --- |
-| [`README.md`](README.md), [`FREEZE.md`](FREEZE.md) | The product front page, and why the earlier session-log line was parked |
-| [`docs/decisions.md`](docs/decisions.md) | What `main` decided and what each decision costs |
-| [`docs/design.md`](docs/design.md) | The design of the memory model both lines share — frozen-line-only sections are marked inline |
-| [`docs/reference/`](docs/reference/) | Research on the upstream reference implementation this port is adapted from |
-| [`AGENTS.md`](AGENTS.md), [`HANDOFF.md`](HANDOFF.md) | Maintainer entry point and current working state |
+| [`README.md`](README.md)、[`FREEZE.md`](FREEZE.md) | 产品首页，以及早期那条会话日志线路为什么被搁置 |
+| [`docs/decisions.md`](docs/decisions.md) | `main` 决定了什么，以及每条决定的代价 |
+| [`docs/design.md`](docs/design.md) | 两条线共享的记忆模型设计 —— 冻结线专属章节在正文里标注 |
+| [`docs/reference/`](docs/reference/) | 本移植所改编的上游参考实现的研究记录 |
+| [`AGENTS.md`](AGENTS.md)、[`HANDOFF.md`](HANDOFF.md) | 维护者入口与当前工作状态 |
 
-`AGENTS.md` and `HANDOFF.md` are working notes for maintainers and AI agents; the rest is user-facing.
+`AGENTS.md` 与 `HANDOFF.md` 是给维护者和 AI agent 的工作笔记；其余内容是面向用户的。

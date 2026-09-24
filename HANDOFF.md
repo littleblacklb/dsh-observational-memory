@@ -1,6 +1,8 @@
-# HANDOFF — 状态 / 交接（最后更新 2026-09-24 compactAfterTokens 实现与验证完成）
+# HANDOFF — 状态 / 交接（最后更新 2026-09-24 README 改为中文默认 + 首页 banner）
 
 > 新对话从这里读起。本文只写**状态、路径、命令**；**不含任何凭据值**（npm token、recovery code、密码一律不入文档、不入仓库、不入对话）。
+
+> **文档语言与 banner（2026-09-24 起）**：`README.md` 一律是**中文默认**（GitHub 落地页即中文），英文版是同目录 `README.en.md`；原来那份中文文件 `README.zh.md` 已不存在。`scripts/check-readme-pairing.mjs` 现在把**根 README 也算进配对**（3/3，不再是 2/2），并且配对的方向反了：列出来的那侧是中文。首页 banner 是 `docs/assets/banner.webp`（WebP q88，约 116KB，源图 1774×887）。⚠️ 图上画的是**冻结线**的 Memory 面板（图上自己标了 CONCEPT PREVIEW），独立线**没有**这个面板 —— 别按图宣传独立线。
 
 ## 0. 两条线，以及为什么走独立线
 
@@ -58,7 +60,7 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 - 记忆节奏 = **插件默认值**（非动态，commit `b26db28` 起）：`observeAfterTokens 10000`、`reflectAfterTokens 20000`、`observeAfterRatio 0`、`reflectAfterRatio 0`、未知窗口时 `observerChunkMaxTokens` 回退 `60000`。与原项目 `elpapi42/pi-observational-memory` 默认一致。
 - **观察来源（commit `6952302` 起）= 用户文本 + 助手文本（含 tool call）+ tool 结果文本**，每条来源上限 20,000 字符（`MAX_SOURCE_TEXT_CHARS`），插件注入的用户上下文不计入。此前 `tool/result` 是**刻意排除**的，那个理由已被推翻；决策记录见 `docs/decisions.md` 的 "Source scope" 一节。
 - **新增主动压缩（实现与本地验证完成，尚未真实 web 验收）**：引擎行 `observational-memory-compaction` 默认 `compactAfterTokens: 81000`、`compactAfterTokensMode: calibrated`、`compactAfterTokensRatio: 0.68`、`autoCompact: true`；在**下一轮第一次 pre-step** 检查完整来源预算（不裁剪为 observer 的 20K 字符），压缩保留尾部继续计入阈值。与原版 Pi 空闲后触发时机不同。插件替代的压力引擎仍按窗口 80% 兜底，主动/常规压力路径默认都保留约 20K 原文（小窗口缩小），手动与溢出策略不变；来源水位不足时回退原生摘要。不影响未安装插件的 DSH，也不需修改 harness/profile。详见双语 README 与 `docs/decisions.md`。
-- **实施验证**：`pnpm run verify` 已通过（15 文件、313 用例；statement/branch/function/line 覆盖率 100%；README pairing 2/2、artifacts 16/16）。构建产物已更新；**未重启/验证真实 dsh web，也未调用真实模型；未发布 npm**。
+- **实施验证**：`pnpm run verify` 已通过（15 文件、313 用例；statement/branch/function/line 覆盖率 100%；README pairing 3/3（2026-09-24 起把根 README 也纳入，之前是 2/2）、artifacts 16/16）。构建产物已更新；**未重启/验证真实 dsh web，也未调用真实模型；未发布 npm**。
 - **source token ≠ 服务商报告的请求 token**：它是本包对这些来源条目自己的估算，所以 `/om status` 的计数与 `ctx.tokenMeter` 统计的不是同一个量，对不上是正常的。
 - ~~当前 profile 是"混搭"状态~~ **已消除**（2026-09-24 核实）：两个 link 都指本仓库；harness `master` 的 `tsconfig.base.json` 已无记忆包映射（实测 grep 无命中），`packages/context/observational-memory` 目录也已不存在。
 - **根因备忘录（最初那个启动失败，仅存历史）**：旧 fork 分支 `tsconfig.base.json`（412-413 行）把 `@deepseek-ai/dsh-observational-memory` / `…-tool-observational-memory` 映射到 `packages/context/…/src`，而子路径 `/startup` 无映射、仍走 `~/.dsh/profiles/web/node_modules` → **一个树里混入了两份实现** → `…/startup: pending (waiting for service: observationalMemoryStore)` → `dsh: 1 entry did not activate`。master 上没有这两行映射，干净 harness 不会遇到。
@@ -71,8 +73,8 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 
 ## 3. 已完成的验证（不必重做）
 
-- 安装形态：只装 ledger → 2 行 ACTIVE + store 就绪；ledger + tool → 3 行 ACTIVE；**只装 tool → 启动失败**（`tool-observational-memory: pending (waiting for service: observationalMemoryStore)`）。README 已按此修正（commit `4ab40b8`，含中英两份）。
-- 历史预检（新功能改动前）：`pnpm run build` / `pnpm run test`（14 文件 **271** 用例）/ `pnpm run check:artifacts`（16/16）/ `pnpm run check:readme-pairing`（2/2）。用例数从 266 涨到 271 是 commit `6952302`（tool 输出纳入 source）加的 5 个。新功能预检见 §2（15 文件、313 用例）。
+- 安装形态：只装 ledger → 2 行 ACTIVE + store 就绪；ledger + tool → 3 行 ACTIVE；**只装 tool → 启动失败**（`tool-observational-memory: pending (waiting for service: observationalMemoryStore)`）。README 已按此修正（commit `4ab40b8`，当时两份都叫中英 README；2026-09-24 改名为 `README.md`=中 / `README.en.md`=英）。
+- 历史预检（新功能改动前）：`pnpm run build` / `pnpm run test`（14 文件 **271** 用例）/ `pnpm run check:artifacts`（16/16）/ `pnpm run check:readme-pairing`（当时 2/2）。用例数从 266 涨到 271 是 commit `6952302`（tool 输出纳入 source）加的 5 个。新功能预检见 §2（15 文件、313 用例）。
 - **`pnpm run verify` 是含覆盖率的那道总门**（= build + typecheck + test:coverage + check:readme-pairing + check:artifacts）。上面四条是它的组成部分，别再只跑四条就宣布全绿。
 - **覆盖率表里 `startup.ts` 那行显示 `0 | 0 | 0 | 0` 是正常的，别去查**（2026-09-24 核实）：该文件是纯 re-export（`export { default } from './compaction-engine.ts'`），在 v8 原始数据（`coverage/coverage-final.json`）里 `statementMap` / `fnMap` / `b` **全为空** —— 0/0 个可覆盖单元，vitest 把 0/0 渲染成了 0%。门确实在跑（`vitest.config.ts:29-35`，`perFile: true` + 四项 100%）且通过；除它之外每个文件都是 100%。
 - **本轮新增的链接检查**：`check:readme-pairing` 只校验中英结构配对，**抓不到坏链接**。2026-09-24 全仓库扫过一遍，修掉了 ledger README 中英各 2 处 `../../tool-observational-memory/README.md`（多了一级，正确是 `../tool-observational-memory/README.md`）。改动 md 后建议重跑一次同类扫描。
@@ -129,8 +131,6 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 5. **`docs/design.md` 是两条线共享的设计记录，不是冻结线专属**（2026-09-24 定位修正）。它写在冻结线的视角下（session event 存储、in-repo 布局、Memory tab），但 §4.3 worker 契约、§4.4 model-visible channel、§4.5/§4.5b compaction 继承、§10 的 harness 实测坑都是 **main 今天在跑的**。因此它保留在 main 上，冻结专属的章节用 `**[frozen line only]**` / `**[partly frozen line only]**` 行内标注（§4.1、§4.1b、§4.2、§4.3b、§4.6、§4.7、§5、§6、§7、§8、§9、Implementation status）。
    - 冻结分支 `parked/browser-ui` 的 `FREEZE.md` 已同步为 main 版（另加一段"你在哪个分支"说明）；该分支的 `DESIGN.md` 仍在根目录且**没有**这些标注 —— 那是分支的原样记录，刻意不同步。
    - **待查线索**：§10 那条 "Override `compactIfNeeded` too, or the automatic pressure path throws `TargetPressureConfigError`"，而 main 的 `MemoryCompactionEngine` **只覆写了 `summarize`**。已确认该错误在 harness `packages/compaction/compaction-basic/src/config.ts:139,149` 抛出、`src/index.ts:157` 有 catch，**所以不能断定是 bug** —— 但这条警告是否仍适用于 main 值得单独查一次。
-6. **`README.i18n.yaml` 的"一致性记录"不可信，而且没有任何门在读它**（2026-09-24 发现，**不是本轮引入的**）：
-   - 两份 yaml 都停在 `657c971`，此后 tool README 又改过一次（`4ab40b8`）、ledger README 又改过两次（`b26db28`、`aca1853`），**一次都没重新记录** ⇒ 记录早已过期。
-   - 更根本的是 `scripts/check-readme-pairing.mjs` 的哈希公式是错的：它把 `text.length`（UTF-16 码元数）当作 blob 的字节长度，而中文 README 两者差近一倍（`7307` vs `13493`）—— 算出来的**不是 git blob 哈希**，与它文件头自称的"the git blob hash"不符。
-   - 实测四个文件，记录值**既不等于真实 git blob、也不等于脚本自己的公式**；`pnpm run verify` 与 `check:readme-pairing`（不带 `--write`）**只比较结构，从不读这两个 yaml**，所以记录既不准确也无人强制。
-   - 修法（**未做**，属代码/门禁改动，不在本轮 md 整理范围内）：`text.length` → `Buffer.byteLength(text, 'utf8')`，再 `--write` 重录；如需，可把"记录是否匹配当前 blob"真正接进门禁。
+6. **`README.i18n.yaml` 的"一致性记录"曾经不可信，现在半修**（2026-09-24 首查，同日随 README 改名顺手修了哈希）：
+   - ✅ 已修：`scripts/check-readme-pairing.mjs` 原来把 `text.length`（UTF-16 码元数）当 blob 字节长度，算出来的不是 git blob 哈希；改成 `Buffer.byteLength(text, 'utf8')` 后已 `--write` 重录三份记录，实测与 `git hash-object` 一致。
+   - ⚠️ 仍未闭合：**没有任何门在读这两个 yaml**。`pnpm run verify` 与 `check:readme-pairing`（不带 `--write`）只比较结构，记录既不准确也无人强制 —— 改 README 后如果想让记录保持真实，得手动 `--write`。若要让门禁真正覆盖它，需要新增"记录是否匹配当前 blob"的检查。

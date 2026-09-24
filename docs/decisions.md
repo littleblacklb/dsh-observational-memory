@@ -228,8 +228,9 @@ were measured:
 - **The compaction render must be strictly smaller** than the region it replaces,
   or it delegates to the default summarizer. Real context is never replaced by
   nothing, and an empty projection always delegates.
-- **Bilingual READMEs carry equal authority.** `pnpm run check:readme-pairing`
-  enforces structural equivalence (heading tree, code blocks, list and table
-  shapes, link targets) between each `README.md` and its `README.zh.md`. Wording
+- **Bilingual READMEs carry equal authority, with Chinese as the default.**
+  `pnpm run check:readme-pairing` enforces structural equivalence (heading tree,
+  code blocks, list and table shapes, link targets) between every `README.md`
+  (Chinese — the page a reader lands on) and its `README.en.md`. Wording
   differences are the point; structure differences are drift — so an edit to one
   side is incomplete until the other side is brought along.

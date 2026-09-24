@@ -5,14 +5,18 @@
 // code blocks, the same list shapes, and the same link targets. Wording
 // differences are the point; structure differences are drift.
 //
+// `README.md` is the Chinese default and every pair's English side sits next to
+// it as `README.en.md`, mirroring the tree above.
+//
 // Usage: node scripts/check-readme-pairing.mjs [--write] [<readme.md> ...]
 import { createHash } from 'node:crypto'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** Every bilingual pair in the repository. */
+/** Every bilingual pair in the repository, listed by its Chinese-default side. */
 const PAIRS = [
+  'README.md',
   'packages/observational-memory/README.md',
   'packages/tool-observational-memory/README.md',
 ]
@@ -44,8 +48,8 @@ function signature(text) {
     if (/^\s*[-*]\s+/.test(line)) listItems += 1
     for (const match of line.matchAll(/\]\(([^)]+)\)/g)) {
       // A pair points at the same document in each language, so the locale
-      // suffix is not a difference: `docs/x.zh.md` and `docs/x.md` are one role.
-      links.push(match[1].replace(/\.zh\.md(?=#|$)/, '.md'))
+      // suffix is not a difference: `README.en.md` and `README.md` are one role.
+      links.push(match[1].replace(/\.en\.md(?=#|$)/, '.md'))
     }
   }
   // A table row is a list of cells; comparing counts catches a dropped row.
@@ -80,12 +84,12 @@ const pairs = selected.length > 0 ? selected : PAIRS.map(pair => join(root, pair
 
 let failed = 0
 const recorded = []
-for (const english of pairs) {
-  const chinese = english.replace(/README\.md$/, 'README.zh.md')
+for (const chinese of pairs) {
+  const english = chinese.replace(/README\.md$/, 'README.en.md')
   const en = readFileSync(english, 'utf8')
   const zh = readFileSync(chinese, 'utf8')
   const problem = difference(en, zh)
-  const label = english.slice(root.length)
+  const label = chinese.slice(root.length)
   if (problem === undefined) {
     console.log(`ok   ${label}`)
   } else {
@@ -98,7 +102,7 @@ for (const english of pairs) {
 if (write && failed === 0) {
   for (const [label, en, zh] of recorded) {
     const file = join(dirname(join(root, label)), 'README.i18n.yaml')
-    const hash = text => createHash('sha1').update(`blob ${text.length}\0${text}`).digest('hex')
+    const hash = text => createHash('sha1').update(`blob ${Buffer.byteLength(text, 'utf8')}\0${text}`).digest('hex')
     const header = [
       '# Bilingual-pair consistency record: the git blob hash of each side as of the',
       '# last confirmed-consistent state. Both languages carry equal authority; after',
@@ -106,7 +110,7 @@ if (write && failed === 0) {
       '#   node scripts/check-readme-pairing.mjs --write',
     ].join('\n')
     const name = basename(label)
-    writeFileSync(file, `${header}\n${name}: ${hash(en)}\n${name.replace(/\.md$/, '.zh.md')}: ${hash(zh)}\n`)
+    writeFileSync(file, `${header}\n${name}: ${hash(zh)}\n${name.replace(/\.md$/, '.en.md')}: ${hash(en)}\n`)
     console.log(`     recorded ${file.slice(root.length)}`)
   }
 }

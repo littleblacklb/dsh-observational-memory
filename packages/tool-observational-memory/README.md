@@ -1,76 +1,76 @@
 ---
-description: "The memory_recall tool: resolve one memory id back to the exact conversation it came from, so a compacted record can be checked against its evidence."
+description: "memory_recall 工具：把一个记忆 id 解析回它来自的确切对话，从而可以让被压缩的记录与其证据对照。"
 kind: "package-reference"
 ---
 
 # @deepseek-ai/dsh-tool-observational-memory
 
-English | [中文](README.zh.md)
+[English](README.en.md) | 中文
 
 ## Summary
 
-Compaction replaces the exact record of what was said with condensed memory, so the model can hold a fact without the evidence behind it. This package adds `memory_recall`: given one memory id — the twelve hex characters printed in brackets on a memory line — it returns the conversation that produced it, following the chain from a reflection to the observations it preserves, and from an observation to its source entries. It is a lookup for a known id, not a search, and it reports what it could not resolve.
+压缩会用浓缩的记忆替换掉「说过的原话」的确切记录，这意味着模型可能持有一个事实却没有它背后的证据。本包加入 `memory_recall`：一个面向模型的工具，接受一个记忆 id——也就是记忆行方括号中打印的十二个十六进制字符——返回产生它的那段对话，沿着溯源链从一条反思走到它所保留的观察，再从一条观察走到它的来源条目。它是对已知 id 的查找而非搜索，并且如实报告它无法解析的部分，而不是把缺口填上。
 
 ## Table of Contents
 
-- [Use this package](#use-this-package)
-- [Understand the implementation](#understand-the-implementation)
-- [Further Exploration](#further-exploration)
-- [Dev Note](#dev-note)
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [使用本包](#use-this-package)
+- [理解实现](#understand-the-implementation)
+- [延伸阅读](#further-exploration)
+- [开发者注记](#dev-note)
+- [模型体验](#model-experience)
+- [已知限制与待办](#known-limitations-and-deferred-work)
 
 -----
 
 <a id="use-this-package"></a>
-## Use this package
+## 使用本包
 
-Mount it beside `@deepseek-ai/dsh-observational-memory`, which owns the memory ledger this tool reads. Both commands are required: the ledger joins the profile's bundle layers only when it is a direct dependency, so installing this package alone leaves its ledger copy transitive, and the tool then waits for a store no layer publishes.
+把它挂载在 `@deepseek-ai/dsh-observational-memory` 旁边，后者拥有本工具所读取的记忆账本。两条命令都要执行：账本只有作为直接依赖安装时才会进入 profile 的 bundle 层，只装本包时它的账本副本只是传递依赖，工具便会一直等待一个从不发布的 store。
 
 ```bash
 dsh plugin --profile web add @deepseek-ai/dsh-observational-memory
 dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 ```
 
-The tool is opt-in: a deployment that does not mount it still records memory, and simply cannot resolve an id back to its sources. It declares the ledger store in its inject list, so where the ledger is absent the tool does not mount at all rather than registering a tool that can only answer "no memory".
+本工具是可选的：没有挂载它的部署仍然会记录记忆，只是无法把一个 id 解析回它的来源。它把账本 store 声明在自己的 inject 列表里，因此在没有账本的地方工具根本不会挂载，而不是注册一个只会回答「没有记忆」的工具。
 
-There is nothing to configure. The tool registers one name and one schema, and contributes one prompt section telling the model when recall is worth a call.
+没有任何需要配置的东西。工具注册一个名字和一个 schema，并贡献一段提示词章节，告诉模型何时值得调用召回。
 
 -----
 
 <a id="understand-the-implementation"></a>
-## Understand the implementation
+## 理解实现
 
-Recall is a read over two existing seams, and it adds no storage of its own.
+召回是对两个既有接缝的读取，它不新增任何自己的存储。
 
-Memory comes from the ledger store the domain package publishes on the context: the same store the compaction renderer and the `/om` commands read, so recall cannot disagree with them about what memory holds. Resolving an id expands a reflection into the observations it names, and an observation into the entries it cites.
+记忆来自域包发布到 context 上的账本 store：与压缩渲染器和 `/om` 命令读取的是同一个 store，所以召回不可能与它们对「记忆里有什么」产生分歧。解析一个 id 会把一条反思展开为它所引用的观察，把一条观察展开为它所引用的条目。
 
-The source entries come from `ctx.sessionQuery`, because arbitrary historical reads are no longer available synchronously. Each cited seq is read and then traced, so a source that compaction has since shadowed reports the checkpoint that replaced it rather than reading as an ordinary entry that no longer reaches the model.
+来源条目来自 `ctx.sessionQuery`，因为任意的历史读取已不再同步可用。每一个被引用的 seq 都会先被读取、再被追踪，因此一个之后被压缩遮蔽的来源会报告替换它的检查点，而不是读起来像一个仍然到达模型、实则不然的普通条目。
 
-Everything that could not be resolved is reported: a supporting observation missing from the ledger, a cited entry absent from the log, or a cited entry that exists but is not conversation. A gap is stated rather than papered over, because a recall that silently returns less than it claims is worse than one that says what is missing.
+所有无法解析的部分都会被报告：账本中缺失的支撑观察、日志中不存在的被引条目，或者存在但不是对话的被引条目。缺口是被陈述出来的，而不是被粉饰的，因为一次悄悄少给内容的召回，比一次明说自己缺了什么的召回更糟。
 
 -----
 
 <a id="further-exploration"></a>
-## Further Exploration
+## 延伸阅读
 
-- [`dsh-observational-memory`](../observational-memory/README.md) — the ledger, its transitions, and the compaction renderer this tool reads.
-- [`src/index.ts`](src/index.ts) — the tool definition, its own prompt section, and the provenance walk.
-- [`FREEZE.md`](../../FREEZE.md) — why memory left the session log, which is what makes this a store read.
+- [`dsh-observational-memory`](../observational-memory/README.md) —— 本工具所读取的账本、它的转换，以及压缩渲染器。
+- [`src/index.ts`](src/index.ts) —— 工具定义、它自己的提示词章节，以及来源链遍历。
+- [`FREEZE.md`](../../FREEZE.md) —— 记忆为什么离开会话日志，那正是这里变成 store 读取的原因。
 
 -----
 
 <a id="dev-note"></a>
-## Dev Note
+## 开发者注记
 
 <details>
-<summary>Working context for maintainers — click to expand</summary>
+<summary>维护者工作背景——点击展开</summary>
 
-The plugin is a pure consumer: it reads the published ledger store and adds no storage of its own. It does declare that store in its inject list, so a deployment that mounts the tool without the ledger gets no tool at all rather than one that can only answer "no memory".
+插件是纯消费者：它读取发布出来的账本 store，自己不新增任何存储。它确实把该 store 声明在 inject 列表里，因此在没有账本的情况下挂载工具会完全得不到工具，而不是得到一个只会回答「没有记忆」的工具。
 
-`memory_recall` is the tool name, not `recall`. `recall` is already a `ContextForm` value in the model message vocabulary, and the chat UI renders a "recall" context body for it, so reusing the word as a tool name would collide with an existing meaning.
+工具名是 `memory_recall`，而不是 `recall`。`recall` 已经是模型消息词汇表中一个 `ContextForm` 取值，聊天界面会为它渲染一个 "recall" 上下文体，所以把同一个词复用为工具名会与既有含义冲突。
 
-The catalog generator mounts this package over the SQLite query provider and a session store, because the tool's `inject` includes `sessionQuery` and the provider needs a store to read. A manifest entry that omits either leaves the plugin PENDING and the generator fails loudly rather than cataloguing an empty section.
+工具目录生成器会把本包挂载在 SQLite 查询提供方与一个 session store 之上，因为工具的 `inject` 包含 `sessionQuery`，而该提供方需要一个 store 才能读取。遗漏其中任何一个的清单条目都会让插件停在 PENDING，生成器会显式失败，而不是把一个空章节收进目录。
 
 </details>
 
@@ -83,38 +83,38 @@ The catalog generator mounts this package over the SQLite query provider and a s
 
 #### What the model sees
 
-The model sees the generated `memory_recall` schema: an object with one required `id` string, described as the twelve-character id exactly as printed in brackets on a memory line. The description states that this is a lookup for a known id and not a search, so the model does not treat it as a way to browse history.
+模型看到的生成后的 `memory_recall` schema：一个对象，包含一个必填的 `id` 字符串，描述为记忆行方括号中打印的十二个字符 id。描述说明这是对已知 id 的查找而非搜索，因此模型不会把它当作浏览历史的手段。
 
 #### Token effect
 
-A fixed schema cost on every request where the tool is visible. One call returns a bounded result: at most twelve source entries, each clamped to two thousand characters, plus one line per resolved record.
+在工具可见的每个请求上产生固定的 schema 开销。一次调用返回有界的结果：最多十二条来源条目，每条截断到两千字符，加上每条已解析记录一行。
 
 #### KV Cache effect
 
-The schema and its description are stable for a given configuration, so the prefix stays cacheable. Recalled text arrives as an ordinary tool result at the context tail and does not disturb the reusable prefix.
+给定配置下 schema 与其描述保持稳定，因此前缀可被缓存。召回的文本作为普通工具结果落在上下文尾部，不扰动可复用的前缀。
 
 ### The recall result
 
 #### What the model sees
 
-A short note saying what resolved, one line per matched reflection and observation with the record's id, timestamp, relevance, and whether it is still active or has been dropped, then the cited conversation as `#seq role: text` lines. A source that compaction has shadowed carries the checkpoint that replaced it. Anything unresolved is listed last, naming the missing supporting observations, absent source entries, or cited entries that are not conversation.
+一句说明解析了什么的短注，然后是每条匹配到的反思与观察各一行，带上记录的 id、时间戳、重要性与它仍处于活跃还是已被裁剪；接着是按 `#seq role: text` 形式给出的被引对话。被压缩遮蔽的来源会带上替换它的检查点。任何无法解析的部分列在最后，指出缺失的支撑观察、不存在的来源条目，或者存在但不是对话的被引条目。
 
 #### Token effect
 
-The result grows with the number of matched records and their sources, bounded by the twelve-entry and two-thousand-character caps. A reflection resolves through its supporting observations, so one reflection lookup can return several records and their sources together.
+结果随匹配记录数与其来源数量增长，并受十二条与两千字符上限约束。一条反思会通过它的支撑观察展开，所以一次反思查找可能同时返回若干条记录及其来源。
 
 #### KV Cache effect
 
-Append-only tool results, so newly recalled content follows the reusable request prefix and does not invalidate existing cache entries.
+仅追加的工具结果，因此新召回的文本跟在可复用的请求前缀之后，不会使既有缓存条目失效。
 
 ## Known Limitations and Deferred Work
 
-- **Recall is a lookup, not a search.** An id that the model was never shown cannot be recalled, and there is no query form. Browsing history by content is what the session-query tools are for.
-- **It answers only about the calling session's memory.** Cross-session recall is out of scope here; the query tools cover cross-session history.
-- **A reflection resolves only as well as its citations.** When a supporting observation is no longer in the ledger, recall reports the gap rather than following a weaker path, so a poorly cited reflection returns less evidence.
-- **Source text is clamped and the entry count is capped.** A long source is truncated in the result with the truncation stated; reading it in full is the query tools' job.
-- **Shadowed sources report their replacer, not the original text through the chain.** The result names the checkpoint that replaced a source; it does not walk the chain to reconstruct the text as it stood before compaction.
-- **Deferred.** A web card rendering the recalled evidence beside the conversation, and an optional semantic fallback when a literal id lookup returns nothing.
+- **召回是查找，不是搜索。** 模型从未见过的 id 无法召回，也没有查询形式。按内容浏览历史是 session-query 工具的职责。
+- **它只回答调用会话自身的记忆。** 跨会话召回不在本包范围内；查询工具覆盖跨会话历史。
+- **一条反思的解析质量取决于它的引用。** 当某个支撑观察已不在账本中时，召回会报告这个缺口，而不是沿一条更弱的路径继续，因此引用不佳的反思会返回更少的证据。
+- **来源文本会被截断，条目数量有上限。** 过长的来源会在结果中被截断并说明截断量；完整读取它是查询工具的职责。
+- **被遮蔽的来源报告的是替换者，而不是穿过链条的原文。** 结果会指出替换该来源的检查点，但不会沿链条重建压缩之前的文本。
+- **待办。** 在对话旁渲染召回证据的 Web 卡片，以及在字面 id 查找无果时的可选语义兜底。
 
 -----
 
