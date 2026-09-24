@@ -22,7 +22,7 @@ export const CHARS_PER_TOKEN = 4
 /** One message's role and flattened text, as the conversation surface sees it. */
 export interface ConversationText {
   /** Which side of the conversation produced the entry. */
-  readonly role: 'user' | 'assistant'
+  readonly role: 'user' | 'assistant' | 'tool'
   /** The entry's flattened, clamped text. */
   readonly text: string
 }
@@ -52,6 +52,22 @@ export function flattenContent(content: unknown): string {
   return parts.join('\n').trim()
 }
 
+/** Keep assistant tool calls alongside their results, as in the Pi source transcript. */
+function assistantText(content: unknown): string {
+  if (!Array.isArray(content)) return ''
+  const parts: string[] = []
+  for (const block of content) {
+    if (typeof block !== 'object' || block === null) continue
+    const typed = block as { type?: unknown; text?: unknown; name?: unknown; arguments?: unknown }
+    if (typed.type === 'text' && typeof typed.text === 'string') parts.push(typed.text)
+    if (typed.type === 'tool-call' && typeof typed.name === 'string') {
+      const args = typeof typed.arguments === 'string' ? typed.arguments : JSON.stringify(typed.arguments ?? {})
+      parts.push(`[${typed.name}(${args})]`)
+    }
+  }
+  return parts.join('\n').trim()
+}
+
 /**
  * Clamp retained text to {@link MAX_SOURCE_TEXT_CHARS}.
  * @param text - the text to clamp.
@@ -77,17 +93,33 @@ export function conversationTextOf(
   event: { readonly type: string; readonly data?: unknown },
 ): ConversationText | undefined {
   let content: unknown
+  let role: ConversationText['role']
   if (event.type === 'user/message') {
     const message = event.data as { content?: unknown; source?: { kind?: string } } | undefined
     if (message?.source?.kind === 'plugin') return undefined
     content = message?.content
+    role = 'user'
   } else if (event.type === 'assistant/message') {
     const data = event.data as { message?: { content?: unknown } } | undefined
     content = data?.message?.content
+    role = 'assistant'
+  } else if (event.type === 'tool/result') {
+    const data = event.data as { message?: { content?: unknown } } | undefined
+    content = data?.message?.content
+    role = 'tool'
   } else {
     return undefined
   }
-  const text = clampText(flattenContent(content))
+  const text = clampText(role === 'assistant'
+    ? assistantText(content)
+    : role === 'tool'
+      ? Array.isArray(content)
+        ? content.map(block => {
+            if (typeof block !== 'object' || block === null || block.type !== 'tool-result') return ''
+            return flattenContent(block.content)
+          }).filter(Boolean).join('\n').trim()
+        : ''
+      : flattenContent(content))
   if (text.length === 0) return undefined
-  return { role: event.type === 'user/message' ? 'user' : 'assistant', text }
+  return { role, text }
 }

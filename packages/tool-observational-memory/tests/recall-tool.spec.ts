@@ -273,6 +273,17 @@ describe('memory_recall', () => {
     await ctx.fiber.dispose()
   })
 
+  it('recalls tool-result evidence with the same text the observer saw', async () => {
+    const { ctx, execute } = await harness({
+      observations: [{ content: 'The tool found a match.', sourceSeqs: [3] }],
+      reads: [{ seq: 3, type: 'tool/result', data: { message: { content: [
+        { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'match found' }], isError: false },
+      ] } } }],
+    })
+    expect(textOf(await execute({ id: memoryId('The tool found a match.') }))).toContain('#3 tool: match found')
+    await ctx.fiber.dispose()
+  })
+
   it('treats source content that is not a block array as no text at all', async () => {
     const { ctx, execute } = await harness({
       observations: [{ content: 'A malformed source.', sourceSeqs: [3] }],

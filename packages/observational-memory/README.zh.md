@@ -51,6 +51,8 @@ dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 | `observeAfterTokens` | `10000` | 新增对话达到 10,000 source token 后运行 observer |
 | `reflectAfterTokens` | `20000` | 达到 20,000 后运行 reflector |
 
+source token 包括用户文本、助手文本及工具调用、工具结果中的文本（每条来源最多保留 20,000 字符），不是服务商报告的请求 token。工具输出可以触发观察，并可按会话 seq 引用和召回；插件注入的用户上下文不计入。
+
 把 `observeAfterRatio` 或 `reflectAfterRatio` 设为 `(0, 1)` 之间的比例，即可改为随**当前模型真实上下文窗口**缩放：窗口读取自持久的 `request/context` 事件，因此不产生额外调用，也能在重载后保留 —— 1M token 模型配 `observeAfterRatio: 0.05` 变成每 50,000 token 观察一次，而 128K 模型仍得到适合自己的阈值。比例设为 `0`（默认值）即关闭该比例、使用绝对阈值；adapter 不公布窗口时得到的也是同样的行为。
 
 ### Worker 模型：默认使用会话模型

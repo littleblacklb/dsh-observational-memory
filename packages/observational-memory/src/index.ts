@@ -48,6 +48,8 @@ export type { ObservationalMemoryState } from './vocabulary.ts'
 export { citedSourceSeqs, resolveMemoryId } from './recall.ts'
 export type { RecallResult, RecalledObservation } from './recall.ts'
 export { renderMemory } from './render.ts'
+/** Shared source extraction keeps memory_recall evidence identical to observer input. */
+export { conversationTextOf } from './text.ts'
 export {
   applyDrops, applyObservations, applyReflections, emptyMemoryState,
   MemoryStore, resolveDshHome, resolveStorageDir,

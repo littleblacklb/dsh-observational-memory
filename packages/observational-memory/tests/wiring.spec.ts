@@ -260,6 +260,32 @@ describe('observer wiring', () => {
     expect(calls[0]).toMatchObject({ provider: 'session-provider', model: 'session-model' })
   })
 
+  it('triggers on tool output and accepts a citation to its source seq', async () => {
+    const calls: Call[] = []
+    const quote = { seq: 0 }
+    const ctx = await mount({
+      calls,
+      observations: [{ timestamp: '2026-01-15 14:30', content: 'Tool confirmed the result.', relevance: 'high',
+        get sourceSeqs() { return [quote.seq] } }],
+      config: { model: {}, observeAfterTokens: 10, observeAfterRatio: 0 },
+    })
+    const session = ctx.sessions.create(SessionId('observer-tool-result'))
+    route(session)
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', {
+      id: 'm1', role: 'user', content: [{ type: 'text', text: 'Check.' }], source: { kind: 'user' },
+    } as never, { surfaceOp: 'append' })
+    quote.seq = session.append('tool/result', { message: {
+      id: 'r1', role: 'tool', source: { kind: 'tool', callId: 'c1' },
+      content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'A verified result from the tool.' }], isError: false }],
+    } } as never, { surfaceOp: 'append' }).seq as number
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    await settle()
+    expect(calls).toHaveLength(1)
+    expect(memoryOf(ctx, session).observations[0]?.sourceSeqs).toEqual([quote.seq])
+    expect(sourceEntryAt(ctx, session, quote.seq)).toEqual({ role: 'tool', text: 'A verified result from the tool.' })
+  })
+
   it('does not run before the cadence threshold is reached', async () => {
     const calls: Call[] = []
     const ctx = await mount({

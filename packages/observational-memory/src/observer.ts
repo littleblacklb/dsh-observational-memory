@@ -124,7 +124,7 @@ export function uncoveredTokens(
  */
 export function renderObserverChunk(chunk: readonly ObservationSourceEntry[]): string {
   return chunk
-    .map(entry => `[${entry.seq}] ${entry.role === 'user' ? 'User' : 'Assistant'}: ${entry.text}`)
+    .map(entry => `[${entry.seq}] ${entry.role === 'user' ? 'User' : entry.role === 'tool' ? 'Tool result' : 'Assistant'}: ${entry.text}`)
     .join('\n\n')
 }
 

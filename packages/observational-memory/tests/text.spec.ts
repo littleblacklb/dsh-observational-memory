@@ -103,8 +103,29 @@ describe('conversationTextOf', () => {
     expect(conversationTextOf(userEvent('ok', { kind: 'user' }))).toEqual({ role: 'user', text: 'ok' })
   })
 
-  it('refuses every event type that is not conversation', () => {
+  it('reads tool results through their nested text blocks', () => {
+    expect(conversationTextOf({ type: 'tool/result', data: { message: { content: [
+      { type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'file contents' }, { type: 'image' }] },
+    ] } } })).toEqual({ role: 'tool', text: 'file contents' })
     expect(conversationTextOf({ type: 'tool/result', data: {} })).toBeUndefined()
+    expect(conversationTextOf({ type: 'tool/result', data: { message: { content: [{ type: 'text', text: 'not a result' }] } } })).toBeUndefined()
+  })
+
+  it('includes assistant tool calls even when there is no prose', () => {
+    expect(conversationTextOf({ type: 'assistant/message', data: { message: { content: [
+      { type: 'tool-call', name: 'read', arguments: '{"path":"a.ts"}' },
+      { type: 'text', text: 'Checking the file.' },
+      { type: 'tool-call', name: 'bash', arguments: { command: 'pwd' } },
+    ] } } })).toEqual({ role: 'assistant', text: '[read({"path":"a.ts"})]\nChecking the file.\n[bash({"command":"pwd"})]' })
+  })
+
+  it('renders a tool call with missing arguments as empty arguments', () => {
+    expect(conversationTextOf({ type: 'assistant/message', data: { message: { content: [
+      { type: 'tool-call', name: 'status' }, null,
+    ] } } })).toEqual({ role: 'assistant', text: '[status({})]' })
+  })
+
+  it('refuses unrelated events', () => {
     expect(conversationTextOf({ type: 'assistant/attempt', data: {} })).toBeUndefined()
   })
 
@@ -114,8 +135,12 @@ describe('conversationTextOf', () => {
     expect(conversationTextOf({ type: 'assistant/message', data: {} })).toBeUndefined()
   })
 
-  it('clamps long text rather than refusing it', () => {
+  it('clamps long text rather than refusing it, including tool results', () => {
     const text = conversationTextOf(userEvent('y'.repeat(MAX_SOURCE_TEXT_CHARS + 5)))
     expect(text?.text.endsWith('[truncated 5 chars]')).toBe(true)
+    const result = conversationTextOf({ type: 'tool/result', data: { message: { content: [
+      { type: 'tool-result', content: [{ type: 'text', text: 'z'.repeat(MAX_SOURCE_TEXT_CHARS + 5) }] },
+    ] } } })
+    expect(result?.text.endsWith('[truncated 5 chars]')).toBe(true)
   })
 })

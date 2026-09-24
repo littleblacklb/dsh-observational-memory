@@ -51,6 +51,8 @@ Mount the plugin in a profile and it works with no further configuration. Memory
 | `observeAfterTokens` | `10000` | The observer runs after 10,000 new source tokens |
 | `reflectAfterTokens` | `20000` | The reflector runs after 20,000 |
 
+Source tokens include user text, assistant text and tool calls, and the text of tool results (each source entry capped at 20,000 characters); they are not provider-reported request tokens. Tool output can trigger observation and can be cited and recalled by its session seq. Plugin-injected user context is excluded.
+
 Set `observeAfterRatio` or `reflectAfterRatio` to a fraction in `(0, 1)` to scale that clock to the **active model's real context window** instead. The window is read from the durable `request/context` event, so it costs no extra call and survives a reload: a 1M-token model with `observeAfterRatio: 0.05` observes every 50,000 tokens rather than every 10,000, while a 128K model keeps a threshold that suits its window. A ratio of `0` — the default — disables the ratio and uses the absolute count, and so does an adapter that declines to advertise a window.
 
 ### Worker model: the session model by default

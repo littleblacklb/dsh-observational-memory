@@ -48,9 +48,11 @@ describe('source fold', () => {
     expect(applySourceEvent(empty(), injected)).toEqual({ entries: [] })
   })
 
-  it('ignores events that are neither user nor assistant messages', () => {
-    const state = applySourceEvent(empty(), { type: 'tool/result', seq: SessionSeq(4), data: {} })
-    expect(state).toEqual({ entries: [] })
+  it('records tool output with its own citable seq and token count', () => {
+    const state = applySourceEvent(empty(), { type: 'tool/result', seq: SessionSeq(4), data: {
+      message: { content: [{ type: 'tool-result', toolCallId: 'c1', content: [{ type: 'text', text: 'result text' }] }] },
+    } })
+    expect(state.entries).toEqual([{ seq: 4, role: 'tool', text: 'result text', tokens: 3 }])
   })
 
   it('skips an entry whose content has no text', () => {
@@ -59,7 +61,7 @@ describe('source fold', () => {
     expect(applySourceEvent(empty(), { type: 'user/message', seq: SessionSeq(7), data: undefined })).toEqual({ entries: [] })
   })
 
-  it('joins multiple text blocks and ignores non-text blocks', () => {
+  it('joins text and tool calls while ignoring unsupported blocks', () => {
     const state = applySourceEvent(empty(), assistantEvent(8, [
       { type: 'text', text: 'first' },
       { type: 'tool-call', id: 'c', name: 'read', arguments: '{}' },
@@ -67,7 +69,7 @@ describe('source fold', () => {
       null,
       'stray',
     ]))
-    expect(state.entries[0]?.text).toBe('first\nsecond')
+    expect(state.entries[0]?.text).toBe('first\n[read({})]\nsecond')
   })
 
   it('rewrites an entry in place when a later event reuses its seq', () => {
@@ -105,6 +107,7 @@ describe('source fold', () => {
   it('validates one entry through its schema', () => {
     expect(observationSourceEntrySchema.parse({ seq: 1, role: 'user', text: 'hi', tokens: 1 }))
       .toEqual({ seq: 1, role: 'user', text: 'hi', tokens: 1 })
+    expect(observationSourceEntrySchema.parse({ seq: 2, role: 'tool', text: 'result', tokens: 2 }).role).toBe('tool')
     expect(() => observationSourceEntrySchema.parse({ seq: 1, role: 'system', text: 'hi', tokens: 1 })).toThrow()
   })
 })

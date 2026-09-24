@@ -28,7 +28,7 @@ import {
 } from '../src/observer.ts'
 import type { ObserverLlm } from '../src/observer.ts'
 
-function entry(seq: number, tokens: number, role: 'user' | 'assistant' = 'user'): ObservationSourceEntry {
+function entry(seq: number, tokens: number, role: ObservationSourceEntry['role'] = 'user'): ObservationSourceEntry {
   return { seq, role, text: 'x'.repeat(tokens * 4), tokens }
 }
 
@@ -166,9 +166,10 @@ describe('chunk selection', () => {
   })
 
   it('renders entries with their citable numbers and roles', () => {
-    const text = renderObserverChunk([entry(7, 1, 'user'), entry(8, 1, 'assistant')])
+    const text = renderObserverChunk([entry(7, 1, 'user'), entry(8, 1, 'assistant'), entry(9, 1, 'tool')])
     expect(text).toContain('[7] User: ')
     expect(text).toContain('[8] Assistant: ')
+    expect(text).toContain('[9] Tool result: ')
   })
 })
 

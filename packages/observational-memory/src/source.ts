@@ -7,9 +7,9 @@
  * input is derivable from the log rather than from process-local buffers, which
  * is what lets a resumed session keep observing from where it left off.
  *
- * `tool/result` is deliberately excluded: tool output is bulky, is already
- * summarized by the assistant message that requested it, and would crowd out
- * conversation in a fixed-size chunk.
+ * Tool results are source entries too: in tool-heavy sessions their text is
+ * often the evidence the assistant uses, and excluding it would keep the
+ * observer below its source-token threshold. Each entry is size-capped.
  *
  * @module @deepseek-ai/dsh-observational-memory/source
  */
@@ -27,7 +27,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 
 const sourceEntrySchema = zod.object({
   seq: zod.number().int().nonnegative(),
-  role: zod.enum(['user', 'assistant']),
+  role: zod.enum(['user', 'assistant', 'tool']),
   text: zod.string(),
   tokens: zod.number().int().nonnegative(),
 })

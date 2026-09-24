@@ -20,7 +20,7 @@ import type { SessionQueryEngine } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
-import { citedSourceSeqs, MEMORY_ID_PATTERN, resolveMemoryId } from '@deepseek-ai/dsh-observational-memory'
+import { citedSourceSeqs, conversationTextOf, MEMORY_ID_PATTERN, resolveMemoryId } from '@deepseek-ai/dsh-observational-memory'
 import type { ObservationalMemoryState } from '@deepseek-ai/dsh-observational-memory'
 
 /** Cordis plugin name used by loader diagnostics. */
@@ -64,18 +64,6 @@ interface RecallOutput {
   shadowedSourceSeqs: number[]
 }
 
-/** Flatten a message's text blocks, mirroring what the observer was given. */
-function textOf(content: unknown): string {
-  if (!Array.isArray(content)) return ''
-  const parts: string[] = []
-  for (const block of content) {
-    if (typeof block !== 'object' || block === null) continue
-    const typed = block as { type?: unknown; text?: unknown }
-    if (typed.type === 'text' && typeof typed.text === 'string') parts.push(typed.text)
-  }
-  return parts.join('\n').trim()
-}
-
 /** Clamp one evidence entry's text to the returned budget. */
 function clampEvidence(text: string): string {
   if (text.length <= MAX_EVIDENCE_CHARS) return text
@@ -84,17 +72,7 @@ function clampEvidence(text: string): string {
 
 /** Map one source event to its role label and text, or undefined when it is not conversation. */
 function toEvidence(event: { type: string; seq: number; data: unknown }): { role: string; text: string } | undefined {
-  if (event.type === 'user/message') {
-    const message = event.data as { content?: unknown } | undefined
-    const text = textOf(message?.content)
-    return text.length === 0 ? undefined : { role: 'user', text }
-  }
-  if (event.type === 'assistant/message') {
-    const message = event.data as { message?: { content?: unknown } } | undefined
-    const text = textOf(message?.message?.content)
-    return text.length === 0 ? undefined : { role: 'assistant', text }
-  }
-  return undefined
+  return conversationTextOf(event)
 }
 
 /**
