@@ -659,7 +659,7 @@ The field set, carrying the reference keys where they still mean the same thing:
 | `reflectAfterTokens` | `20000` | settings | Reflector clock |
 | `observeAfterRatio` | `0` | settings | Opt-in window-proportional observer clock; `0` disables |
 | `reflectAfterRatio` | `0` | settings | Opt-in window-proportional reflector clock |
-| `observationsPoolMaxTokens` / `…TargetTokens` | `20000` / half | settings | |
+| `observationsPoolMaxTokens` / `…TargetTokens` | `20000` / half | settings | Max is only a bound: it derives/validates the target, which is what the dropper and pool math use. This line has no pool-max full-fold trigger — that rule belongs to the frozen log line |
 | `observerChunkMaxTokens` | derived | config | `floor(window * 0.2)`, min `256`, else `60000` |
 | `agentMaxTurns` | `16` | config | |
 | `model` | session model | settings | `{ provider, id, reasoningEffort }` — the cost escape hatch |

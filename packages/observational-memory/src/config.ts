@@ -39,7 +39,10 @@ export const DEFAULT_OBSERVE_AFTER_TOKENS = 10_000
 /** Absolute reflector threshold in source tokens; the default cadence. */
 export const DEFAULT_REFLECT_AFTER_TOKENS = 20_000
 
-/** Active-observation pool budget at which compaction folds the whole ledger. */
+/**
+ * Upper bound for the active-observation pool, used to derive and validate the
+ * target rather than as a runtime trigger.
+ */
 export const DEFAULT_OBSERVATIONS_POOL_MAX_TOKENS = 20_000
 
 /** Share of the memory model's window one observer chunk may occupy. */
@@ -64,7 +67,15 @@ export interface Config {
   observeAfterTokens?: number
   /** Absolute reflector threshold in source tokens; the default cadence. */
   reflectAfterTokens?: number
-  /** Active-observation pool budget in tokens. */
+  /**
+   * Upper bound for the active-observation pool.
+   *
+   * Nothing reads this bound at runtime: it exists to derive
+   * `observationsPoolTargetTokens` (half of it, by default) and to reject a target
+   * that is not below it. The dropper and the pool metrics work against the
+   * target, so lowering this field alone changes cadence only through that
+   * derived target.
+   */
   observationsPoolMaxTokens?: number
   /** Active-observation target the dropper maintains; defaults to half of the maximum. */
   observationsPoolTargetTokens?: number

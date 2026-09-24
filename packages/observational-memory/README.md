@@ -73,7 +73,7 @@ Memory reaches the model as a block of id-tagged lines. The `/om` family is how 
 
 | Command | Shows |
 |---|---|
-| `/om status` | Record counts, the observer's coverage drift, the active pool against its budget, and per-worker watermarks |
+| `/om status` | Record counts, the observer's coverage drift, the active pool against the dropper's target, and per-worker watermarks |
 | `/om view` | The exact block compaction would render right now |
 | `/om show <id>` | One record, resolved through its provenance — a reflection to the observations it preserves, an observation to the entries it cites |
 
@@ -95,8 +95,8 @@ This directory — not the session log — is what a backup has to carry for a s
 | `reflectAfterRatio` | `0` | Reflector cadence as a fraction of the context window; `0` disables the ratio |
 | `observeAfterTokens` | `10000` | Observer cadence in source tokens, and the threshold a disabled ratio uses |
 | `reflectAfterTokens` | `20000` | Reflector cadence in source tokens, and the threshold a disabled ratio uses |
-| `observationsPoolMaxTokens` | `20000` | Active-observation budget at which compaction folds the whole ledger |
-| `observationsPoolTargetTokens` | half of the maximum | Active-observation target the dropper maintains |
+| `observationsPoolMaxTokens` | `20000` | Upper bound for the active-observation pool; it only derives and validates the target |
+| `observationsPoolTargetTokens` | half of the maximum | Active-observation target the dropper maintains, and the working point the pool math uses |
 | `observerChunkMaxTokens` | one fifth of the memory model's window | Largest observer chunk; minimum `256` |
 | `agentMaxTurns` | `16` | Turn cap for one background worker run |
 | `model` | the session model | `{ provider, model, reasoningEffort }` for memory work |

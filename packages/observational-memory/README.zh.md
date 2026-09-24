@@ -73,7 +73,7 @@ dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 
 | 命令 | 显示内容 |
 |---|---|
-| `/om status` | 记录数、observer 的覆盖漂移、活跃池相对预算的位置、以及各 worker 的水位 |
+| `/om status` | 记录数、observer 的覆盖漂移、活跃池相对 dropper target 的位置、以及各 worker 的水位 |
 | `/om view` | 压缩此刻会渲染出的确切文本块 |
 | `/om show <id>` | 单条记录，按它的来源链解析 —— 反思展开为它保留的观察，观察展开为它引用的条目 |
 
@@ -95,8 +95,8 @@ dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 | `reflectAfterRatio` | `0` | reflector 节奏占上下文窗口的比例；`0` 关闭该比例 |
 | `observeAfterTokens` | `10000` | observer 的节奏（source token），也是比例关闭时使用的阈值 |
 | `reflectAfterTokens` | `20000` | reflector 的节奏（source token），也是比例关闭时使用的阈值 |
-| `observationsPoolMaxTokens` | `20000` | 活跃观察预算，达到后压缩折叠整个 ledger |
-| `observationsPoolTargetTokens` | 最大值的一半 | dropper 维持的活跃观察目标 |
+| `observationsPoolMaxTokens` | `20000` | 活跃观察池的上界；仅用于派生与校验 target |
+| `observationsPoolTargetTokens` | 最大值的一半 | dropper 维持的活跃观察目标，也是池容量计算的实际工作点 |
 | `observerChunkMaxTokens` | 记忆模型窗口的五分之一 | observer 单块上限；最小 `256` |
 | `agentMaxTurns` | `16` | 单次后台 worker 运行的轮次上限 |
 | `model` | 会话模型 | 记忆工作的 `{ provider, model, reasoningEffort }` |
