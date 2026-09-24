@@ -7,10 +7,11 @@ that work in any DeepSeek Harness from npm, with no change to the harness tree.
 It exists because `main` had no place to record a decision. Until now the only
 design document in the repository described the *other* line — the frozen
 session-event line — so a `main` decision had nowhere to go but into that
-document, where it read as a description of something else. That document now
-lives at [`docs/frozen-line/DESIGN.md`](./frozen-line/DESIGN.md) and describes
-only the parked line; why it was parked is in [`FREEZE.md`](../FREEZE.md). This
-file is where `main` records what it decided and why.
+document, where it read as a description of something else. That document is now
+[`docs/design.md`](design.md): it records the memory model both lines share, with
+the sections that are frozen-line-only marked inline. Why the other line was
+parked is in [`FREEZE.md`](../FREEZE.md). This file is where `main` records what it
+decided and why.
 
 Each entry states the decision, the reasoning that is not obvious from the code,
 and what it costs. Two of them (§ "Memory cadence" and § "Pool sizing") were
@@ -44,6 +45,35 @@ What this costs, stated plainly because it is user-visible:
 - A fork starts with a new ledger, because the child gets a new session id.
 - There is no browser memory surface. Status is read through `/om status|view|show`
   and the `memory_recall` tool, both public plugin seams.
+
+## Source scope: tool calls and tool results are source
+
+**Decision: the observer's source is user text, assistant text including its
+tool calls, and the text of tool results. Each source entry is capped at 20,000
+characters (`MAX_SOURCE_TEXT_CHARS`), and plugin-injected user context is
+excluded.**
+
+The first version of this package excluded `tool/result` deliberately, on the
+argument that tool output is bulky, is already summarised by the assistant message
+that requested it, and would crowd conversation out of a fixed-size chunk. That
+argument was wrong on both counts (`6952302`):
+
+1. **In tool-heavy sessions the tool output *is* the evidence.** A failure
+   message, a stack trace, or a file listing is what the assistant reasons from,
+   and an observation that cannot cite it cannot be recalled later. The
+   assistant's own note about what it ran is not a substitute for what came back.
+2. **Excluding it starves the clock.** Cadence is measured in *source* tokens, so
+   dropping the bulkiest part of a tool-heavy session keeps the observer under its
+   threshold while the context window fills up anyway — the memory pass then fires
+   *later* than the pressure it exists to relieve.
+
+The size cap, not exclusion, is what bounds a chunk. This also matches the
+reference implementation, whose transcript carries tool results inline.
+
+The consequence worth carrying forward: **source tokens are not provider-reported
+request tokens.** They are this package's own estimate over the entries above, so
+`/om status` and the configured thresholds count a different quantity than
+`ctx.tokenMeter` does.
 
 ## Memory cadence: fixed absolute thresholds by default
 

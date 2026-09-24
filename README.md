@@ -75,7 +75,7 @@ See [the frozen-line explanation](FREEZE.md) for the session-log trade-off and t
 | --- | --- |
 | [`README.md`](README.md), [`FREEZE.md`](FREEZE.md) | The product front page, and why the earlier session-log line was parked |
 | [`docs/decisions.md`](docs/decisions.md) | What `main` decided and what each decision costs |
-| [`docs/frozen-line/DESIGN.md`](docs/frozen-line/DESIGN.md) | The parked line's full design record — kept for the reasoning, with deliberately different defaults |
+| [`docs/design.md`](docs/design.md) | The design of the memory model both lines share — frozen-line-only sections are marked inline |
 | [`docs/reference/`](docs/reference/) | Research on the upstream reference implementation this port is adapted from |
 | [`AGENTS.md`](AGENTS.md), [`HANDOFF.md`](HANDOFF.md) | Maintainer entry point and current working state |
 

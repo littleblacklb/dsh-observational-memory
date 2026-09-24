@@ -56,6 +56,8 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 
 - profile：`~/.dsh/profiles/web`；bundle 栈：`dsh-base → dsh-web-app → dsh-better-sidebar → @deepseek-ai/dsh-observational-memory → @deepseek-ai/dsh-tool-observational-memory`。profile 的 `cordis.patch.yml` 为空（`[]`），两个 `node_modules/@deepseek-ai` link 都指向本仓库 ⇒ **纯独立线，启动不需要任何 overlay**。
 - 记忆节奏 = **插件默认值**（非动态，commit `b26db28` 起）：`observeAfterTokens 10000`、`reflectAfterTokens 20000`、`observeAfterRatio 0`、`reflectAfterRatio 0`、未知窗口时 `observerChunkMaxTokens` 回退 `60000`。与原项目 `elpapi42/pi-observational-memory` 默认一致。
+- **观察来源（commit `6952302` 起）= 用户文本 + 助手文本（含 tool call）+ tool 结果文本**，每条来源上限 20,000 字符（`MAX_SOURCE_TEXT_CHARS`），插件注入的用户上下文不计入。此前 `tool/result` 是**刻意排除**的，那个理由已被推翻；决策记录见 `docs/decisions.md` 的 "Source scope" 一节。
+- **source token ≠ 服务商报告的请求 token**：它是本包对这些来源条目自己的估算，所以 `/om status` 的计数与 `ctx.tokenMeter` 统计的不是同一个量，对不上是正常的。
 - ~~当前 profile 是"混搭"状态~~ **已消除**（2026-09-24 核实）：两个 link 都指本仓库；harness `master` 的 `tsconfig.base.json` 已无记忆包映射（实测 grep 无命中），`packages/context/observational-memory` 目录也已不存在。
 - **根因备忘录（最初那个启动失败，仅存历史）**：旧 fork 分支 `tsconfig.base.json`（412-413 行）把 `@deepseek-ai/dsh-observational-memory` / `…-tool-observational-memory` 映射到 `packages/context/…/src`，而子路径 `/startup` 无映射、仍走 `~/.dsh/profiles/web/node_modules` → **一个树里混入了两份实现** → `…/startup: pending (waiting for service: observationalMemoryStore)` → `dsh: 1 entry did not activate`。master 上没有这两行映射，干净 harness 不会遇到。
 - 启动：`cd ~/Documents/Code/deepseek-harness && pnpm dsh --profile web web`（tsx 源码启动）或 `node apps/cli/lib/bin.js web`（构建产物）都可以；**不再需要 `--patch`** —— `~/.dsh/om-web-rows.yml` 已删除，它当年的作用是绕开上面的 tsconfig 劫持并钉死 cadence。要自定义节奏就改 profile 的 `cordis.patch.yml`（或临时 `--patch`），字段见 `packages/observational-memory/README.md` 配置表。
@@ -68,7 +70,7 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 ## 3. 已完成的验证（不必重做）
 
 - 安装形态：只装 ledger → 2 行 ACTIVE + store 就绪；ledger + tool → 3 行 ACTIVE；**只装 tool → 启动失败**（`tool-observational-memory: pending (waiting for service: observationalMemoryStore)`）。README 已按此修正（commit `4ab40b8`，含中英两份）。
-- 预检全绿：`pnpm run build` / `pnpm run test`（14 文件 **266** 用例）/ `pnpm run check:artifacts`（16/16）/ `pnpm run check:readme-pairing`（2/2）。
+- 预检全绿：`pnpm run build` / `pnpm run test`（14 文件 **271** 用例）/ `pnpm run check:artifacts`（16/16）/ `pnpm run check:readme-pairing`（2/2）。用例数从 266 涨到 271 是 commit `6952302`（tool 输出纳入 source）加的 5 个，不是 flaky —— 已逐文件核对 vitest 计数与静态 `it(` 计数完全吻合。
 - **`pnpm run verify` 是含覆盖率的那道总门**（= build + typecheck + test:coverage + check:readme-pairing + check:artifacts）。上面四条是它的组成部分，别再只跑四条就宣布全绿。
 - **覆盖率表里 `startup.ts` 那行显示 `0 | 0 | 0 | 0` 是正常的，别去查**（2026-09-24 核实）：该文件是纯 re-export（`export { default } from './compaction-engine.ts'`），在 v8 原始数据（`coverage/coverage-final.json`）里 `statementMap` / `fnMap` / `b` **全为空** —— 0/0 个可覆盖单元，vitest 把 0/0 渲染成了 0%。门确实在跑（`vitest.config.ts:29-35`，`perFile: true` + 四项 100%）且通过；除它之外每个文件都是 100%。
 - **本轮新增的链接检查**：`check:readme-pairing` 只校验中英结构配对，**抓不到坏链接**。2026-09-24 全仓库扫过一遍，修掉了 ledger README 中英各 2 处 `../../tool-observational-memory/README.md`（多了一级，正确是 `../tool-observational-memory/README.md`）。改动 md 后建议重跑一次同类扫描。
@@ -122,7 +124,9 @@ npm publish /tmp/om-publish/deepseek-ai-dsh-tool-observational-memory-0.1.5-rc.2
 2. **发布前：`~/.npm/_cacache` 的 root 属主问题**（§1），根治要用户自己跑 sudo。
 3. **是否 fetch harness 以重新核对上游漂移**（§5），需要用户同意改动其 checkout。
 4. **发布动作本身**：版本仍是 `0.1.5-rc.2`；要不要在首发前提到与新 harness（0.1.7-rc.1）对齐的版本号，未定。
-5. **冻结分支 `parked/browser-ui` 的 FREEZE.md 已同步为 main 版**（2026-09-24），但该分支的 `DESIGN.md` 仍在根目录（main 上是 `docs/frozen-line/DESIGN.md`）—— 两份内容相同，只是路径不同，属刻意保留。
+5. **`docs/design.md` 是两条线共享的设计记录，不是冻结线专属**（2026-09-24 定位修正）。它写在冻结线的视角下（session event 存储、in-repo 布局、Memory tab），但 §4.3 worker 契约、§4.4 model-visible channel、§4.5/§4.5b compaction 继承、§10 的 harness 实测坑都是 **main 今天在跑的**。因此它保留在 main 上，冻结专属的章节用 `**[frozen line only]**` / `**[partly frozen line only]**` 行内标注（§4.1、§4.1b、§4.2、§4.3b、§4.6、§4.7、§5、§6、§7、§8、§9、Implementation status）。
+   - 冻结分支 `parked/browser-ui` 的 `FREEZE.md` 已同步为 main 版（另加一段"你在哪个分支"说明）；该分支的 `DESIGN.md` 仍在根目录且**没有**这些标注 —— 那是分支的原样记录，刻意不同步。
+   - **待查线索**：§10 那条 "Override `compactIfNeeded` too, or the automatic pressure path throws `TargetPressureConfigError`"，而 main 的 `MemoryCompactionEngine` **只覆写了 `summarize`**。已确认该错误在 harness `packages/compaction/compaction-basic/src/config.ts:139,149` 抛出、`src/index.ts:157` 有 catch，**所以不能断定是 bug** —— 但这条警告是否仍适用于 main 值得单独查一次。
 6. **`README.i18n.yaml` 的"一致性记录"不可信，而且没有任何门在读它**（2026-09-24 发现，**不是本轮引入的**）：
    - 两份 yaml 都停在 `657c971`，此后 tool README 又改过一次（`4ab40b8`）、ledger README 又改过两次（`b26db28`、`aca1853`），**一次都没重新记录** ⇒ 记录早已过期。
    - 更根本的是 `scripts/check-readme-pairing.mjs` 的哈希公式是错的：它把 `text.length`（UTF-16 码元数）当作 blob 的字节长度，而中文 README 两者差近一倍（`7307` vs `13493`）—— 算出来的**不是 git blob 哈希**，与它文件头自称的"the git blob hash"不符。

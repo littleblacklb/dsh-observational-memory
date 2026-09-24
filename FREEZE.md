@@ -8,8 +8,9 @@ client — is frozen, not deleted. It required editing the harness repository, s
 could never be distributed. It is preserved here, on branch `parked/browser-ui`,
 and nowhere else: the harness checkout that used to carry both halves has been
 cleaned of them. Its full design record is
-[`docs/frozen-line/DESIGN.md`](docs/frozen-line/DESIGN.md) — note that its cadence
-defaults differ from `main`'s on purpose.
+[`docs/design.md`](docs/design.md) — the design of the memory model both lines
+share, with the sections that are frozen-line-only marked inline, and with cadence
+defaults that differ from `main`'s on purpose.
 
 | Where | Commit |
 |---|---|

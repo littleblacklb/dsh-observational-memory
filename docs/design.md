@@ -1,30 +1,37 @@
-# dsh-observational-memory — Design & Layout (frozen `parked/browser-ui` line)
+# dsh-observational-memory — Design
 
-> **Scope: this is the design record of the frozen line, not of what ships.**
-> It documents the earlier design that stored memory in the session log and added
-> a Memory tab to the web client — the line preserved on branch
-> `parked/browser-ui`, which could never be distributed because it required
-> editing the harness repository. Read it for *why* the memory model works the
-> way it does, not for the current package's behaviour.
+> **What this is.** The design record of the *memory model itself* — the
+> observe → reflect → prune pipeline, the pool, the renderer, the fold, the
+> compaction substitution, and provenance. That model is **shared by both lines**:
+> the frozen session-event line and the installable packages on `main` implement
+> the same design over different storage layers. `FREEZE.md` puts it exactly that
+> way: the two lines "share everything except the storage layer".
 >
-> - For the installable packages, see [`README.md`](../../README.md) and the
->   package READMEs; for the decisions those packages implement, see
->   [`docs/decisions.md`](../decisions.md).
-> - For why this line was abandoned, see [`FREEZE.md`](../../FREEZE.md).
+> This document was written from the **frozen line's vantage point**, so it assumes
+> the ledger is a set of session events, the packages live inside the harness
+> repository, and the web client has a Memory tab. Sections marked
+> **[frozen line only]** describe that vantage point and are *not* `main`.
+> Everything else — the worker contract (§4.3), the model-visible channel (§4.4),
+> inheriting the compaction trigger (§4.5, §4.5b), and the harness gotchas in §10 —
+> is what `main` ships today.
 >
-> Two parts below describe **only** this frozen line and deliberately differ from
-> `main`: cadence here is window-proportional by default
-> (`observeAfterRatio: 0.05`, `reflectAfterRatio: 0.10`), whereas `main` defaults
-> to fixed absolute thresholds; and the config surface below carries the
-> Memory-tab fields (`memory.tab.visible`, `showWorkerNotifications`,
-> `debugLog`) that `main` does not have.
+> - `main`'s packages: [`README.md`](../README.md) and the package READMEs
+> - `main`'s decisions and their costs: [`docs/decisions.md`](decisions.md)
+> - Why the frozen line was parked: [`FREEZE.md`](../FREEZE.md)
+> - The frozen line's code and its harness patch: branch `parked/browser-ui`
 
 A DeepSeek Harness port of [`pi-observational-memory`](https://github.com/elpapi42/pi-observational-memory), plus a
 **Memory Traceability** UI panel with traceable compaction.
 
-Status: implementation complete on `parked/browser-ui`; see [Implementation status](#implementation-status).
+Status: implementation complete on `parked/browser-ui`; see [Implementation status](#implementation-status). The
+[Migration status](#implementation-status) table below counts that line's tests and phases — `main` is a different
+package with a different suite.
 
 ## Implementation status
+
+> **[frozen line only, historical]** — the counts and phases below are
+> `parked/browser-ui`'s (102 tests, in-repo packages, Memory tab). `main` is a
+> different package with its own suite; run `pnpm run verify` for its numbers.
 
 Landed in `packages/context/observational-memory/` — 102 tests, 100% per-file coverage, typecheck clean, and the
 `gen-persistence-catalog`, `verify-export-jsdoc`, `check-workspace-constraints`, and package-README gates all pass.
@@ -186,6 +193,11 @@ Things DSH does **not** give us, which the plan must therefore own:
 
 ### 4.1 Ledger = session events
 
+> **[frozen line only]** — `main` stores the ledger in its own per-session JSON
+> store, so the `memory/*` vocabulary, the projection below, and the `ignorable`
+> problem do not exist on `main`. That is the whole reason the line was parked:
+> see [`FREEZE.md`](../FREEZE.md) and [`decisions.md`](decisions.md).
+
 Three event types, `coversUpToSeq` replacing `coversUpToId` (DSH ids are `SessionSeq`):
 
 ```ts
@@ -213,6 +225,10 @@ type does not bump; the per-event `ignorable` guard covers vocabulary growth. On
 envelope, core event semantics, or the surface mechanism bump it.
 
 ### 4.1b ⚠️ The hard constraint: this package must live in this repository
+
+> **[frozen line only]** — this is the constraint that *forced* the in-repo design,
+> and it is exactly what `main` gave up the session log to escape. `main`'s
+> packages install from npm precisely because they do not need this.
 
 This is the single most consequential finding of the investigation, and it overrides the obvious "write it as an
 out-of-tree plugin" plan.
@@ -274,6 +290,11 @@ Cost of the in-repo decision: the package must satisfy repo conventions — `pnp
 `doc-sync`, per-file 100% coverage in `test:coverage`, JSDoc on every export, an Agent Note, bilingual README.
 
 ### 4.2 Fold = session projection
+
+> **[partly frozen line only]** — the `observationalMemory` projection described
+> below is this line's ledger. `main` folds its ledger in `store.ts` and is not a
+> projection at all; it registers a projection only for `observationSource`, the
+> conversation surface the observer reads.
 
 `ctx.sessionProjections.register({ key: 'observationalMemory', ... })` folds those three events plus `compaction/*`
 events into one client-visible value. This single registration replaces four hand-written projection functions in the
@@ -350,6 +371,12 @@ The worker-model caveats the README must carry (all verified against source, not
 Setting a dedicated cheap model is a single settings field (`model`), which is the documented escape hatch.
 
 ### 4.3b Window-proportional thresholds (a headline feature)
+
+> **[frozen line only]** — this is the **opposite** default from `main`, on
+> purpose. `main` ships fixed absolute thresholds (`observeAfterTokens: 10000`,
+> `reflectAfterTokens: 20000`) and keeps the ratios as an opt-in escape hatch; see
+> [memory cadence](decisions.md#memory-cadence-fixed-absolute-thresholds-by-default)
+> in `decisions.md`. Neither number is a typo for the other.
 
 **Decision: memory cadence scales with the active model's real context window, rather than using fixed absolute token
 counts.**
@@ -517,6 +544,11 @@ triggering would then be absent and the result would not be recognized as a comp
 
 ### 4.6 Traceable compaction
 
+> **[partly frozen line only]** — the three traceability questions and the
+> `shadowedSeqs` / `shadowedRange` source are shared, and `main` answers them
+> through `/om show <id>` and `memory_recall`. The `CompactionTrace` record below
+> is not: it names `om/*` events as the fold's input, which only exists here.
+
 This is the user-requested feature, and DSH makes it nearly free. `compaction/summary` already records
 `shadowedSeqs` and `shadowedRange`. So a compaction trace is:
 
@@ -541,6 +573,11 @@ Which yields exactly the three traceability questions a user actually asks:
 - *"What is currently visible vs. recorded?"* → the drift delta the projection computes.
 
 ### 4.7 The recall tool
+
+> **[partly frozen line only]** — the goal (recall is what makes memory traceable
+> *for the agent*) is shared and `main` ships it as the `memory_recall` tool. The
+> async-history constraint below is not: it applies to reading the **session log**,
+> and `main` reads its own store synchronously instead.
 
 Recall is what makes memory *traceable* for the agent rather than just for the panel, so its constraints matter.
 
@@ -578,6 +615,11 @@ with `isConcurrencySafe: () => true`, a shared string-output renderer, and a fou
 ---
 
 ## 5. The Memory tab & explorer
+
+> **[frozen line only]** — `main` has no browser surface at all. Status is read
+> through `/om status|view|show` and the `memory_recall` tool, both public plugin
+> seams. The read-only explorer described here exists only on
+> `parked/browser-ui`.
 
 **Decision (revised): a Memory tab in the conversation view ring is the surface**, beside Chat and Trajectory.
 
@@ -651,6 +693,12 @@ derived. Row click → evidence; evidence → jump to that message in the conver
 
 ## 6. Config surface
 
+> **[partly frozen line only]** — the two-seam explanation (load-time `Config`
+> vs runtime `ctx.settings`) is shared, but the field table below is this line's.
+> `main` has no `memory.tab.visible`, `showWorkerNotifications`, or `debugLog`,
+> and its ratio defaults are `0`, not `0.05` / `0.10`. For `main`'s actual surface
+> see [`decisions.md`](decisions.md) and the ledger package README.
+
 DSH separates two seams, and memory needs both:
 
 - **Load-time `Config`** (schemastery, validated by Cordis through Standard Schema) is the *composition* surface —
@@ -699,6 +747,11 @@ Proactive-compaction tuning is **not** on this list. Threshold and retention are
 ---
 
 ## 7. Package layout & mounting
+
+> **[frozen line only]** — `main` is two npm packages *outside* the harness tree,
+> with a different layout (`store.ts`, `vocabulary.ts`, `model.ts`, `source.ts`
+> where this line had `types.ts`, `events.ts`, `projection.ts`, `clocks.ts`) and
+> no client half. The mounting steps below are harness-repository steps.
 
 **Site: `packages/context/`** — in-repo, because §4.1b makes that mandatory. The `context` group is the correct home:
 its members (`time-context`, `agent-instructions`, `session-reference`) are exactly this kind of plugin —
@@ -786,6 +839,10 @@ process or carry the `ignorable` cutover the rationale note describes, neither o
 
 ## 8. Phased roadmap
 
+> **[frozen line only, historical]** — the plan that was executed here. It is kept
+> because the phase order carries a lesson `main` inherited: prove the ledger and
+> its fold before writing any worker.
+
 Deliberately ordered so each phase is independently useful and verifiable.
 
 **Phase 0 — skeleton & vocabulary.** Package at `packages/context/observational-memory/`, `Config`, `apply()`, the three
@@ -820,6 +877,11 @@ build + slot registration); all three have working local precedents to copy.
 ---
 
 ## 9. Settled decisions
+
+> **[partly frozen line only]** — items **1, 2, 5, and 7** are this line's
+> positions (in-repo packages, UI in v1, a Memory tab, window-proportional
+> defaults). Items **3, 4, and 6** carried over to `main`, which states them in
+> [`decisions.md`](decisions.md).
 
 1. **In-repo packages.** Forced by §4.1b: the ledger's event types must be declared in this repository or the session
    cannot be reopened.
