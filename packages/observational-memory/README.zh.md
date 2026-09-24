@@ -77,7 +77,7 @@ dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 | `/om view` | 压缩此刻会渲染出的确切文本块 |
 | `/om show <id>` | 单条记录，按它的来源链解析 —— 反思展开为它保留的观察，观察展开为它引用的条目 |
 
-`/om show` 从 observer 自己的 fold 读来源，而不是重新读日志，所以来源显示的正是记录写下时读到的样子。同一套解析也以 [`memory_recall`](../../tool-observational-memory/README.md) 工具的形式提供给模型，它可以对它记忆块里看到的任何 id 调用。
+`/om show` 从 observer 自己的 fold 读来源，而不是重新读日志，所以来源显示的正是记录写下时读到的样子。同一套解析也以 [`memory_recall`](../tool-observational-memory/README.md) 工具的形式提供给模型，它可以对它记忆块里看到的任何 id 调用。
 
 命令输出会进日志（`command/run` 与 `command/done`），所以即使记忆 pass 本身不进 Trajectory，你查询记忆这件事仍然留痕。
 
@@ -131,10 +131,10 @@ dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 ## Further Exploration
 
 - [`FREEZE.md`](../../FREEZE.md) —— 记忆为什么离开会话日志，以及代价是什么。
-- [`DESIGN.md`](../../DESIGN.md) —— 本包所依据的设计记录。
+- [`docs/decisions.md`](../../docs/decisions.md) —— 本包实现的那些决策，以及每一条的代价。
 - [`src/store.ts`](src/store.ts) —— ledger、它的转换、以及它的持久化规则。
 - [`src/compaction-engine.ts`](src/compaction-engine.ts) —— `summarize` 覆写与它的收缩守卫。
-- [`tool-observational-memory`](../../tool-observational-memory/README.md) —— 按来源链解析 id 的 `memory_recall` 工具。
+- [`tool-observational-memory`](../tool-observational-memory/README.md) —— 按来源链解析 id 的 `memory_recall` 工具。
 
 -----
 

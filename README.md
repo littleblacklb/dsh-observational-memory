@@ -55,7 +55,7 @@ This project builds on [pi-observational-memory](https://github.com/elpapi42/pi-
 
 ## License
 
-MIT. See the `LICENSE` file in the public repository.
+MIT. Both packages declare `license: MIT` in their `package.json`.
 
 ## Development
 
@@ -65,4 +65,18 @@ pnpm run test
 pnpm run check:artifacts
 ```
 
+`pnpm run verify` runs the whole gate: build, typecheck, 100% per-file coverage, README-pairing, and the built-artifact check.
+
 See [the frozen-line explanation](FREEZE.md) for the session-log trade-off and the package READMEs for configuration and implementation details.
+
+## Repository layout
+
+| Path | What it is |
+| --- | --- |
+| [`README.md`](README.md), [`FREEZE.md`](FREEZE.md) | The product front page, and why the earlier session-log line was parked |
+| [`docs/decisions.md`](docs/decisions.md) | What `main` decided and what each decision costs |
+| [`docs/frozen-line/DESIGN.md`](docs/frozen-line/DESIGN.md) | The parked line's full design record — kept for the reasoning, with deliberately different defaults |
+| [`docs/reference/`](docs/reference/) | Research on the upstream reference implementation this port is adapted from |
+| [`AGENTS.md`](AGENTS.md), [`HANDOFF.md`](HANDOFF.md) | Maintainer entry point and current working state |
+
+`AGENTS.md` and `HANDOFF.md` are working notes for maintainers and AI agents; the rest is user-facing.

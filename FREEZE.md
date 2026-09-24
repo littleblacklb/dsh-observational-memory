@@ -7,14 +7,24 @@ The earlier line — memory stored in the session log with a Memory tab in the w
 client — is frozen, not deleted. It required editing the harness repository, so it
 could never be distributed. It is preserved here, on branch `parked/browser-ui`,
 and nowhere else: the harness checkout that used to carry both halves has been
-cleaned of them.
+cleaned of them. Its full design record is
+[`docs/frozen-line/DESIGN.md`](docs/frozen-line/DESIGN.md) — note that its cadence
+defaults differ from `main`'s on purpose.
 
 | Where | Commit |
 |---|---|
 | `packages/observational-memory` (the harness's `packages/context/observational-memory`) | `92f44a4` |
 | `packages/tool-observational-memory` (the harness's `packages/context/tool-observational-memory`) | `3255131` |
-| `patches/memory-tab-integration.d8e64c8da6.patch` — the harness-side half: catalogs, tsconfig wiring, composer-dock row | `d8e64c8da6` |
+| `patches/memory-tab-integration.d8e64c8da6.patch` — the harness-side half: catalogs, tsconfig wiring, composer-dock row | `d8e64c8da6` (provenance only — see below) |
 | `patches/*-independent-plugin-wip.patch` — the uncommitted work the two checkouts carried when they were removed | — |
+
+The patch **files** in this repository are the authority, not the hashes. The
+`d8e64c8da6` in that filename records where the patch came from; it is no longer a
+way to fetch the work, because no branch and no tag in the harness checkout
+contains it any more. It survives only in that checkout's reflog and will be
+collected when the reflog expires. Nothing here depends on the harness keeping it:
+the patch text is committed on `parked/browser-ui` alongside the plugin-side code
+it belongs to.
 
 The two lines share everything except the storage layer:
 

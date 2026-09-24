@@ -77,7 +77,7 @@ Memory reaches the model as a block of id-tagged lines. The `/om` family is how 
 | `/om view` | The exact block compaction would render right now |
 | `/om show <id>` | One record, resolved through its provenance — a reflection to the observations it preserves, an observation to the entries it cites |
 
-`/om show` reads sources from the observer's own fold rather than re-reading the log, so a source is shown exactly as it was when the record was written. The same resolution is available to the model as the [`memory_recall`](../../tool-observational-memory/README.md) tool, which it can call on any id it sees in its memory block.
+`/om show` reads sources from the observer's own fold rather than re-reading the log, so a source is shown exactly as it was when the record was written. The same resolution is available to the model as the [`memory_recall`](../tool-observational-memory/README.md) tool, which it can call on any id it sees in its memory block.
 
 Command output is logged (`command/run` and `command/done`), so asking about memory leaves a trace in the session's Trajectory even though the memory passes themselves do not.
 
@@ -131,10 +131,10 @@ The compaction integration replaces the default engine with a subclass that over
 ## Further Exploration
 
 - [`FREEZE.md`](../../FREEZE.md) — why memory left the session log, and what that costs.
-- [`DESIGN.md`](../../DESIGN.md) — the design record this package was built from.
+- [`docs/decisions.md`](../../docs/decisions.md) — the decisions this package implements, and what each one costs.
 - [`src/store.ts`](src/store.ts) — the ledger, its transitions, and its durability rules.
 - [`src/compaction-engine.ts`](src/compaction-engine.ts) — the `summarize` override and its shrink guard.
-- [`tool-observational-memory`](../../tool-observational-memory/README.md) — the `memory_recall` tool that resolves ids through provenance.
+- [`tool-observational-memory`](../tool-observational-memory/README.md) — the `memory_recall` tool that resolves ids through provenance.
 
 -----
 
