@@ -8,6 +8,8 @@ import { SessionSeq } from '@deepseek-ai/dsh-session'
 import {
   DEFAULT_OBSERVE_AFTER_RATIO,
   DEFAULT_OBSERVE_AFTER_TOKENS,
+  DEFAULT_REFLECT_AFTER_RATIO,
+  DEFAULT_REFLECT_AFTER_TOKENS,
   OBSERVER_CHUNK_CONTEXT_RATIO,
   OBSERVER_CHUNK_FALLBACK_TOKENS,
   OBSERVER_CHUNK_MIN_TOKENS,
@@ -68,8 +70,22 @@ function stubLlm(
 const NOW = Date.parse('2026-01-15T14:30:00Z')
 
 describe('cadence configuration', () => {
-  it('resolves window-proportional thresholds and falls back to absolute counts', () => {
-    expect(resolveConfig().observeAfterRatio).toBe(DEFAULT_OBSERVE_AFTER_RATIO)
+  it('defaults to fixed thresholds, independent of the model window', () => {
+    const resolved = resolveConfig()
+    expect(resolved.observeAfterRatio).toBe(0)
+    expect(resolved.observeAfterRatio).toBe(DEFAULT_OBSERVE_AFTER_RATIO)
+    expect(resolved.reflectAfterRatio).toBe(0)
+    expect(resolved.reflectAfterRatio).toBe(DEFAULT_REFLECT_AFTER_RATIO)
+    // A 1M-token window changes nothing while the ratio stays at its default: the
+    // reference plugin's non-dynamic cadence is what an unconfigured session gets.
+    expect(resolveThreshold(resolved.observeAfterRatio, resolved.observeAfterTokens, 1_000_000)).toBe(10_000)
+    expect(resolveThreshold(resolved.reflectAfterRatio, resolved.reflectAfterTokens, 1_000_000)).toBe(20_000)
+    expect(resolveThreshold(resolved.observeAfterRatio, resolved.observeAfterTokens, undefined)).toBe(DEFAULT_OBSERVE_AFTER_TOKENS)
+    expect(resolveThreshold(resolved.reflectAfterRatio, resolved.reflectAfterTokens, undefined)).toBe(DEFAULT_REFLECT_AFTER_TOKENS)
+  })
+
+  it('resolves window-proportional thresholds when a ratio is opted into', () => {
+    expect(resolveConfig({ model: {}, observeAfterRatio: 0.05 }).observeAfterRatio).toBe(0.05)
     expect(resolveThreshold(0.05, 10_000, 1_000_000)).toBe(50_000)
     expect(resolveThreshold(0.05, 10_000, 200_000)).toBe(10_000)
     // Unknown or unusable windows, and a disabled ratio, use the absolute count.

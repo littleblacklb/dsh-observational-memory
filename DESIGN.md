@@ -330,17 +330,15 @@ The worker-model caveats the README must carry (all verified against source, not
 
 Setting a dedicated cheap model is a single settings field (`model`), which is the documented escape hatch.
 
-### 4.3b Window-proportional thresholds (a headline feature)
+### 4.3b Thresholds default to non-dynamic (window-proportional cadence is opt-in)
 
-**Decision: memory cadence scales with the active model's real context window, rather than using fixed absolute token
-counts.**
+**Decision: memory cadence is two fixed absolute token thresholds — `observeAfterTokens: 10000` and
+`reflectAfterTokens: 20000` — exactly as the reference plugin ships. Window-proportional cadence stays available, but
+only when a deployment asks for it by setting a non-zero ratio.**
 
-The reference plugin defaults to fixed counts (`observeAfterTokens: 10000`, `reflectAfterTokens: 20000`) and only offers
-a ratio mode as an *opt-in escape hatch*, because Pi cannot reliably learn the active model's context window — its own
-README calls the ratio mode the choice for "a large-context model (e.g. 1M tokens)" where the calibrated default
-"preempts compaction at ~81K, wasting most of the window."
-
-DSH removes that limitation. The context window is available **synchronously from a projection**:
+An earlier revision of this port inverted that default (ratios primary, absolutes as fallback) on the argument that DSH
+can always learn the window, so the reference's fixed counts were leaving capability on the table. That argument is
+still true about the *mechanism* — the window is available **synchronously from a projection**:
 
 ```ts
 ctx.sessionProjections.stateOf(session, 'contextPressure').contextWindow
@@ -350,30 +348,31 @@ backed by the durable `request/context` event (`packages/core/session/src/types.
 provider round-trip, and the value survives reload because it is in the log. (`ctx.llm.resolveModelInfo(...)` is the
 other route, but it is async and can throw `NO_ADAPTER`.)
 
-So the port inverts the default: **ratios are primary, absolute tokens are the fallback.**
+What changed is the **default**, on two grounds:
+
+1. **Alignment.** Ordinary users install this plugin as a drop-in for the reference extension; a session's memory
+   rhythm must not silently differ from it, and 10 000/20 000 source tokens is the cadence those users already expect.
+2. **Stability.** A ratio makes cadence a function of whichever model the session runs on, so the same conversation
+   observes at different points after a model switch. A fixed threshold is reproducible and easier to reason about
+   when reading `/om status`.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `observeAfterRatio` | `0.05` | observer fires after 5% of the window in new source tokens |
-| `reflectAfterRatio` | `0.10` | reflector fires after 10% |
-| `observeAfterTokens` | `10000` | absolute fallback, used only when `contextWindow` is unknown |
-| `reflectAfterTokens` | `20000` | absolute fallback |
+| `observeAfterTokens` | `10000` | observer fires after 10000 new source tokens — the default cadence |
+| `reflectAfterTokens` | `20000` | reflector fires after 20000 |
+| `observeAfterRatio` | `0` | disabled; a non-zero fraction switches the observer to `floor(window * ratio)` |
+| `reflectAfterRatio` | `0` | disabled; same for the reflector |
 
-This is worth stating plainly in the README as a feature, because it is a real behavioural improvement rather than a
-detail:
+A deployment that wants window-proportional cadence sets a ratio in `(0, 1)`; the same synchronous window makes that
+safe, and a 1M-token model with `observeAfterRatio: 0.05` then observes every 50 000 tokens. The absolute threshold
+keeps its second role as the guaranteed fallback: `contextWindow` is genuinely optional
+(`ContextPressureState.contextWindow?: number`), and an adapter that declines to advertise one leaves it absent, so a
+ratio of `0`, an unknown window, and a window too small to yield a usable threshold all resolve to the absolute count.
 
-> **Memory cadence scales with your model's context window.** Rather than fixed token counts tuned for a 128K window,
-> observation and reflection cadence is a fraction of whatever window your model actually has — so a 1M-token model
-> gets memory passes at a sensible granularity instead of either firing far too often or hogging the window.
-
-The fallback matters and must not be an afterthought: `contextWindow` is genuinely optional
-(`ContextPressureState.contextWindow?: number`), and an adapter that declines to advertise one leaves it absent. In that
-case the absolute thresholds apply, which is exactly the reference's calibrated behaviour. A deployment that wants
-fixed behaviour unconditionally can simply set the ratios to `0` and rely on the fallback.
-
-Bounding the observer chunk is the same story: `observerChunkMaxTokens` derives from a **fraction of the memory model's
-own window** (`floor(contextWindow * 0.2)`, minimum `256`) rather than the reference's hardcoded 60 000 fallback — but
-keeps the same fallback constant when the window is unknown.
+Bounding the observer chunk is a separate question and stays dynamic, because it is a safety cap rather than a cadence:
+`observerChunkMaxTokens` derives from a **fraction of the memory model's own window** (`floor(contextWindow * 0.2)`,
+minimum `256`) with the reference's 60 000 constant as the unknown-window fallback. The reference derives it the same
+way.
 
 ### 4.4 How memory becomes model-visible
 
@@ -656,10 +655,10 @@ The field set, carrying the reference keys where they still mean the same thing:
 
 | Key | Default | Surface | Notes |
 |---|---|---|---|
-| `observeAfterRatio` | `0.05` | settings | Observer clock, fraction of the window (§4.3b) |
-| `reflectAfterRatio` | `0.10` | settings | Reflector clock |
-| `observeAfterTokens` | `10000` | settings | Absolute fallback when `contextWindow` is unknown |
-| `reflectAfterTokens` | `20000` | settings | Absolute fallback |
+| `observeAfterTokens` | `10000` | settings | Observer clock, absolute source tokens (§4.3b) |
+| `reflectAfterTokens` | `20000` | settings | Reflector clock |
+| `observeAfterRatio` | `0` | settings | Opt-in window-proportional observer clock; `0` disables |
+| `reflectAfterRatio` | `0` | settings | Opt-in window-proportional reflector clock |
 | `observationsPoolMaxTokens` / `…TargetTokens` | `20000` / half | settings | |
 | `observerChunkMaxTokens` | derived | config | `floor(window * 0.2)`, min `256`, else `60000` |
 | `agentMaxTurns` | `16` | config | |
@@ -813,8 +812,9 @@ build + slot registration); all three have working local precedents to copy.
 6. **Workers use the session model by default**, with an optional `model` override. The README must state the cost
    caveats prominently — memory work bills against the session model *and is invisible to DSH's own token accounting*
    (§4.3).
-7. **Window-proportional thresholds are the default**, not an opt-in escape hatch. Absolute token counts remain as the
-   fallback for when `contextWindow` is absent. The README states this as a headline feature (§4.3b).
+7. **Fixed thresholds are the default**, aligned with the reference plugin: `observeAfterTokens: 10000` /
+   `reflectAfterTokens: 20000`. Window-proportional ratios (`observeAfterRatio`, `reflectAfterRatio`) stay available as an
+   opt-in, and the absolute counts double as the fallback whenever `contextWindow` is absent (§4.3b).
 
 No open questions remain. Implementation can start at Phase 0.
 

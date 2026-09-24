@@ -42,20 +42,16 @@ Neither package changes DeepSeek Harness. Memory is not a session event, so noth
 
 Mount the plugin in a profile and it works with no further configuration. Memory cadence, the worker model, the ledger location, and the active-memory budget are all configurable; the defaults suit a long coding session.
 
-### Memory cadence scales with your model's context window
+### Memory cadence: fixed thresholds by default
 
-This is the plugin's main behavioural difference from a fixed-threshold memory design.
-
-Thresholds are fractions of the **active model's real context window**, not absolute token counts tuned for one window size:
+`observeAfterTokens` and `reflectAfterTokens` are the cadence, and both are absolute source-token counts — the same non-dynamic default the reference plugin ships:
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `observeAfterRatio` | `0.05` | The observer runs after 5% of the window in new conversation |
-| `reflectAfterRatio` | `0.10` | The reflector runs after 10% |
+| `observeAfterTokens` | `10000` | The observer runs after 10,000 new source tokens |
+| `reflectAfterTokens` | `20000` | The reflector runs after 20,000 |
 
-The window is read from the durable `request/context` event, so it costs no extra call and survives a reload. A 1M-token model therefore gets memory passes at a granularity suited to a 1M-token model, instead of the cadence a 128K-tuned constant would impose — neither firing far too often nor letting the window fill.
-
-`observeAfterTokens` and `reflectAfterTokens` remain as the fallback used when no window is known, which is also exactly what a deployment gets if it sets a ratio to `0`.
+Set `observeAfterRatio` or `reflectAfterRatio` to a fraction in `(0, 1)` to scale that clock to the **active model's real context window** instead. The window is read from the durable `request/context` event, so it costs no extra call and survives a reload: a 1M-token model with `observeAfterRatio: 0.05` observes every 50,000 tokens rather than every 10,000, while a 128K model keeps a threshold that suits its window. A ratio of `0` — the default — disables the ratio and uses the absolute count, and so does an adapter that declines to advertise a window.
 
 ### Worker model: the session model by default
 
@@ -95,10 +91,10 @@ This directory — not the session log — is what a backup has to carry for a s
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `observeAfterRatio` | `0.05` | Observer cadence as a fraction of the context window; `0` disables the ratio |
-| `reflectAfterRatio` | `0.10` | Reflector cadence as a fraction of the context window; `0` disables the ratio |
-| `observeAfterTokens` | `10000` | Absolute observer threshold, used when no window is known |
-| `reflectAfterTokens` | `20000` | Absolute reflector threshold, used when no window is known |
+| `observeAfterRatio` | `0` | Observer cadence as a fraction of the context window; `0` disables the ratio |
+| `reflectAfterRatio` | `0` | Reflector cadence as a fraction of the context window; `0` disables the ratio |
+| `observeAfterTokens` | `10000` | Observer cadence in source tokens, and the threshold a disabled ratio uses |
+| `reflectAfterTokens` | `20000` | Reflector cadence in source tokens, and the threshold a disabled ratio uses |
 | `observationsPoolMaxTokens` | `20000` | Active-observation budget at which compaction folds the whole ledger |
 | `observationsPoolTargetTokens` | half of the maximum | Active-observation target the dropper maintains |
 | `observerChunkMaxTokens` | one fifth of the memory model's window | Largest observer chunk; minimum `256` |

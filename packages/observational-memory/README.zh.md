@@ -42,20 +42,16 @@ dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 
 把插件挂进 profile 即可，无需其他配置。记忆节奏、worker 模型、ledger 位置、活跃记忆预算都可配置；默认值适合长时间编码会话。
 
-### 记忆节奏随模型上下文窗口缩放
+### 记忆节奏：默认固定阈值
 
-这是本插件与固定阈值记忆设计的主要行为差异。
-
-阈值是**当前模型真实上下文窗口**的比例，而不是为某个窗口大小调出来的绝对 token 数：
+节奏由 `observeAfterTokens` 与 `reflectAfterTokens` 两个**绝对 source token 阈值**决定，这与原项目默认的非动态策略一致：
 
 | 设置 | 默认值 | 含义 |
 |---|---|---|
-| `observeAfterRatio` | `0.05` | 新增对话达到窗口的 5% 后运行 observer |
-| `reflectAfterRatio` | `0.10` | 达到 10% 后运行 reflector |
+| `observeAfterTokens` | `10000` | 新增对话达到 10,000 source token 后运行 observer |
+| `reflectAfterTokens` | `20000` | 达到 20,000 后运行 reflector |
 
-窗口读取自持久的 `request/context` 事件，因此不产生额外调用，也能在重载后保留。1M token 的模型于是得到适合 1M token 模型的记忆节奏，而不是一个按 128K 调好的常量强加的节奏 —— 既不会触发过频，也不会让窗口填满。
-
-`observeAfterTokens` 与 `reflectAfterTokens` 保留为未知窗口时的回退值，把某个 ratio 设为 `0` 的部署拿到的也正是这个行为。
+把 `observeAfterRatio` 或 `reflectAfterRatio` 设为 `(0, 1)` 之间的比例，即可改为随**当前模型真实上下文窗口**缩放：窗口读取自持久的 `request/context` 事件，因此不产生额外调用，也能在重载后保留 —— 1M token 模型配 `observeAfterRatio: 0.05` 变成每 50,000 token 观察一次，而 128K 模型仍得到适合自己的阈值。比例设为 `0`（默认值）即关闭该比例、使用绝对阈值；adapter 不公布窗口时得到的也是同样的行为。
 
 ### Worker 模型：默认使用会话模型
 
@@ -95,10 +91,10 @@ dsh plugin --profile web add @deepseek-ai/dsh-tool-observational-memory
 
 | 设置 | 默认值 | 含义 |
 |---|---|---|
-| `observeAfterRatio` | `0.05` | observer 节奏占上下文窗口的比例；`0` 关闭该比例 |
-| `reflectAfterRatio` | `0.10` | reflector 节奏占上下文窗口的比例；`0` 关闭该比例 |
-| `observeAfterTokens` | `10000` | 未知窗口时使用的 observer 绝对阈值 |
-| `reflectAfterTokens` | `20000` | 未知窗口时使用的 reflector 绝对阈值 |
+| `observeAfterRatio` | `0` | observer 节奏占上下文窗口的比例；`0` 关闭该比例 |
+| `reflectAfterRatio` | `0` | reflector 节奏占上下文窗口的比例；`0` 关闭该比例 |
+| `observeAfterTokens` | `10000` | observer 的节奏（source token），也是比例关闭时使用的阈值 |
+| `reflectAfterTokens` | `20000` | reflector 的节奏（source token），也是比例关闭时使用的阈值 |
 | `observationsPoolMaxTokens` | `20000` | 活跃观察预算，达到后压缩折叠整个 ledger |
 | `observationsPoolTargetTokens` | 最大值的一半 | dropper 维持的活跃观察目标 |
 | `observerChunkMaxTokens` | 记忆模型窗口的五分之一 | observer 单块上限；最小 `256` |

@@ -1,27 +1,42 @@
 /**
  * Serializable configuration for observational memory.
  *
- * Cadence is expressed as a fraction of the active model's context window with
- * an absolute token fallback, because the window is read from the durable
- * `request/context` event: a large-window model then gets memory passes at a
- * sensible granularity instead of the fixed counts a 128K-tuned default would
- * impose.
+ * Cadence is two absolute source-token thresholds (`observeAfterTokens`,
+ * `reflectAfterTokens`), which is the reference plugin's non-dynamic policy: a
+ * session's memory rhythm does not move with the model it happens to run on.
+ *
+ * The `observeAfterRatio` / `reflectAfterRatio` fields are an opt-in escape
+ * hatch for deployments that do want window-proportional cadence. Both default
+ * to `0`, which disables the ratio; a non-zero ratio resolves against the active
+ * model's context window, which is read from the durable `request/context`
+ * event, and the absolute threshold remains the fallback whenever the window is
+ * unknown.
  *
  * @module @deepseek-ai/dsh-observational-memory/config
  */
 
 import z from '@deepseek-ai/schemastery'
 
-/** Fraction of the context window after which the observer runs. */
-export const DEFAULT_OBSERVE_AFTER_RATIO = 0.05
+/**
+ * Fraction of the context window after which the observer runs.
+ *
+ * `0` is the default and disables the ratio, leaving the observer on its
+ * absolute threshold.
+ */
+export const DEFAULT_OBSERVE_AFTER_RATIO = 0
 
-/** Fraction of the context window after which the reflector runs. */
-export const DEFAULT_REFLECT_AFTER_RATIO = 0.1
+/**
+ * Fraction of the context window after which the reflector runs.
+ *
+ * `0` is the default and disables the ratio, leaving the reflector on its
+ * absolute threshold.
+ */
+export const DEFAULT_REFLECT_AFTER_RATIO = 0
 
-/** Absolute observer threshold used when the context window is unknown. */
+/** Absolute observer threshold in source tokens; the default cadence. */
 export const DEFAULT_OBSERVE_AFTER_TOKENS = 10_000
 
-/** Absolute reflector threshold used when the context window is unknown. */
+/** Absolute reflector threshold in source tokens; the default cadence. */
 export const DEFAULT_REFLECT_AFTER_TOKENS = 20_000
 
 /** Active-observation pool budget at which compaction folds the whole ledger. */
@@ -41,13 +56,13 @@ export const DEFAULT_AGENT_MAX_TURNS = 16
 
 /** Deployment-varying memory settings; every field is optional with a documented default. */
 export interface Config {
-  /** Fraction of the context window after which the observer runs. `0` disables the ratio and uses the absolute threshold. */
+  /** Fraction of the context window after which the observer runs. `0` — the default — disables the ratio and uses the absolute threshold. */
   observeAfterRatio?: number
-  /** Fraction of the context window after which the reflector runs. `0` disables the ratio and uses the absolute threshold. */
+  /** Fraction of the context window after which the reflector runs. `0` — the default — disables the ratio and uses the absolute threshold. */
   reflectAfterRatio?: number
-  /** Absolute observer threshold in source tokens, used when no context window is known. */
+  /** Absolute observer threshold in source tokens; the default cadence. */
   observeAfterTokens?: number
-  /** Absolute reflector threshold in source tokens, used when no context window is known. */
+  /** Absolute reflector threshold in source tokens; the default cadence. */
   reflectAfterTokens?: number
   /** Active-observation pool budget in tokens. */
   observationsPoolMaxTokens?: number
@@ -193,7 +208,8 @@ function requireRatio(value: number | undefined, fallback: number, field: string
 /**
  * Resolve a worker's token threshold against the active context window.
  *
- * A zero ratio, an unknown window, or a window too small to yield a usable
+ * A zero ratio (the default, which is how a deployment gets non-dynamic
+ * cadence), an unknown window, or a window too small to yield a usable
  * threshold all fall back to the absolute count, so cadence stays defined even
  * when an adapter declines to advertise a window.
  * @param ratio - the configured window fraction.
