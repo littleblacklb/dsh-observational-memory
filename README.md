@@ -1,3 +1,5 @@
+本开源项目已链接并认可 [LINUX DO 社区](https://linux.do/)。
+
 # 面向 DeepSeek Harness 的观察式记忆
 
 [English](README.en.md) | 中文
@@ -56,8 +58,6 @@ pnpm dsh --profile web web
 ## 由来与致谢
 
 本项目基于 elpapi42 及其贡献者的 [pi-observational-memory](https://github.com/elpapi42/pi-observational-memory)：它的「观察 → 反思 → 剪枝」模型与可追溯记忆的思路影响了本次实现。Harness 专属的存储、压缩集成、命令与包接线记录在这里以及各包的参考文档中。感谢上游作者以 MIT 许可发布他们的工作。
-
-感谢 [Linux.do](https://linux.do) 论坛 的支持。
 
 ## 许可
 
